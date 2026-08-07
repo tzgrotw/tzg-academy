@@ -1,14 +1,16 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { Page } from '../components/Shell'
 import { useAuth } from '../hooks/useAuth'
-import { useCatalog } from '../hooks/useCatalog'
+import { useAdminMembers } from '../hooks/useAdminMembers'
+import { useAdminContent } from '../hooks/useAdminContent'
 import { supabase } from '../lib/supabase'
 import { AUDIENCE_LABEL, TIER_LABEL } from '../lib/tier'
-import type { Audience, Chapter, Course, Material, Profile, Section, Tier } from '../lib/types'
+import type { Audience, Chapter, Course, Material, Section, Tier } from '../lib/types'
 
 // 後台——兩個分頁：會員（搜尋＋一鍵改身分）、課程（課→章→節/教材，逐層展開）。
 // 精簡版原則：一列一件事、存了馬上生效、錯了講清楚哪裡錯。
+// 資料存取都在 hooks/useAdminMembers、hooks/useAdminContent；這裡只管畫面。
 
 export function AdminPage() {
   const { profile, loading } = useAuth()
@@ -36,30 +38,7 @@ export function AdminPage() {
 /* ───────────────────────── 會員 ───────────────────────── */
 
 function MembersTab() {
-  const [rows, setRows] = useState<Profile[]>([])
-  const [loaded, setLoaded] = useState(false)
-  const [q, setQ] = useState('')
-  const [busyId, setBusyId] = useState<string | null>(null)
-
-  async function load() {
-    const { data } = await supabase.from('profiles').select('*').order('created_at', { ascending: false })
-    setRows((data as Profile[] | null) ?? [])
-    setLoaded(true)
-  }
-  useEffect(() => { void load() }, [])
-
-  const shown = useMemo(() => {
-    const k = q.trim().toLowerCase()
-    if (!k) return rows
-    return rows.filter(r => r.name.toLowerCase().includes(k) || r.email.toLowerCase().includes(k))
-  }, [rows, q])
-
-  async function setTier(p: Profile, tier: Tier) {
-    setBusyId(p.user_id)
-    const { error } = await supabase.from('profiles').update({ tier }).eq('user_id', p.user_id)
-    if (!error) setRows(rs => rs.map(r => r.user_id === p.user_id ? { ...r, tier } : r))
-    setBusyId(null)
-  }
+  const { rows, loaded, q, setQ, shown, busyId, setTier } = useAdminMembers()
 
   return (
     <div className="acard">
@@ -88,17 +67,15 @@ function MembersTab() {
 
 /* ───────────────────────── 課程 ───────────────────────── */
 
-const slug = () => `ch${Date.now().toString(36)}`
+type AdminContent = ReturnType<typeof useAdminContent>
 
 function ContentTab() {
-  const cat = useCatalog()
+  const content = useAdminContent()
   const [openCourse, setOpenCourse] = useState<number | null>(null)
   const [msg, setMsg] = useState<string | null>(null)
 
   async function createCourse() {
-    const { error } = await supabase.from('courses').insert({ title: '未命名課程', audience: 'public' })
-    setMsg(error ? `開課失敗：${error.message}` : null)
-    void cat.reload()
+    setMsg(await content.createCourse())
   }
 
   return (
@@ -106,30 +83,30 @@ function ContentTab() {
       {msg && <p className="formerr">{msg}</p>}
       <div className="acard">
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <h3 style={{ flex: 1 }}>課程（{cat.courses.length}）</h3>
+          <h3 style={{ flex: 1 }}>課程（{content.courses.length}）</h3>
           <button className="btn btn-s" onClick={() => void createCourse()}>＋開新課程</button>
         </div>
-        {!cat.loaded && <div className="skel" />}
-        {cat.courses.map(c => (
+        {!content.loaded && <div className="skel" />}
+        {content.courses.map(c => (
           <CourseEditor key={c.id} course={c}
-            chapters={cat.chapters.filter(ch => ch.course_id === c.id).sort((a, b) => a.sort_no - b.sort_no)}
-            materials={cat.materials}
+            chapters={content.chapters.filter(ch => ch.course_id === c.id).sort((a, b) => a.sort_no - b.sort_no)}
+            materials={content.materials}
             open={openCourse === c.id}
             onToggle={() => setOpenCourse(openCourse === c.id ? null : c.id)}
-            onChanged={() => void cat.reload()} />
+            content={content} />
         ))}
       </div>
     </>
   )
 }
 
-function CourseEditor({ course, chapters, materials, open, onToggle, onChanged }: {
+function CourseEditor({ course, chapters, materials, open, onToggle, content }: {
   course: Course
   chapters: Chapter[]
   materials: Material[]
   open: boolean
   onToggle: () => void
-  onChanged: () => void
+  content: AdminContent
 }) {
   const [title, setTitle] = useState(course.title)
   const [tagline, setTagline] = useState(course.tagline)
@@ -139,34 +116,19 @@ function CourseEditor({ course, chapters, materials, open, onToggle, onChanged }
 
   async function save(patch: Partial<Course>) {
     setBusy(true); setErr(null)
-    const { error } = await supabase.from('courses')
-      .update({ ...patch, updated_at: new Date().toISOString() }).eq('id', course.id)
-    if (error) setErr(error.message)
-    setBusy(false); onChanged()
+    setErr(await content.updateCourse(course.id, patch))
+    setBusy(false)
   }
 
   async function uploadCover(file: File) {
     setBusy(true); setErr(null)
-    try {
-      const path = `course-${course.id}/${Date.now()}.${file.name.split('.').pop() || 'jpg'}`
-      const { error } = await supabase.storage.from('course-covers').upload(path, file, { upsert: true })
-      if (error) throw error
-      const { data } = supabase.storage.from('course-covers').getPublicUrl(path)
-      await save({ cover_url: data.publicUrl })
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e))
-      setBusy(false)
-    }
+    setErr(await content.uploadCourseCover(course.id, file))
+    setBusy(false)
   }
 
   async function addChapter() {
     setErr(null)
-    const { error } = await supabase.from('course_chapters').insert({
-      key: slug(), course_id: course.id, title: '新章節',
-      sort_no: (chapters.at(-1)?.sort_no ?? 0) + 10,
-    })
-    if (error) setErr(error.message)
-    onChanged()
+    setErr(await content.addChapter(course.id, chapters.at(-1)?.sort_no ?? 0))
   }
 
   return (
@@ -204,7 +166,7 @@ function CourseEditor({ course, chapters, materials, open, onToggle, onChanged }
           {chapters.map(ch => (
             <ChapterEditor key={ch.key} chapter={ch}
               materials={materials.filter(m => m.chapter_key === ch.key).sort((a, b) => a.sort_no - b.sort_no)}
-              onChanged={onChanged} />
+              content={content} />
           ))}
           <p style={{ marginTop: 12 }}>
             <button className="btn-line" onClick={() => void addChapter()}>＋加一章</button>
@@ -215,10 +177,10 @@ function CourseEditor({ course, chapters, materials, open, onToggle, onChanged }
   )
 }
 
-function ChapterEditor({ chapter, materials, onChanged }: {
+function ChapterEditor({ chapter, materials, content }: {
   chapter: Chapter
   materials: Material[]
-  onChanged: () => void
+  content: AdminContent
 }) {
   const [open, setOpen] = useState(false)
   const [title, setTitle] = useState(chapter.title)
@@ -237,45 +199,29 @@ function ChapterEditor({ chapter, materials, onChanged }: {
 
   async function save(patch: Partial<Chapter>) {
     setBusy(true); setErr(null)
-    const { error } = await supabase.from('course_chapters').update(patch).eq('key', chapter.key)
-    if (error) setErr(error.message)
-    setBusy(false); onChanged()
+    setErr(await content.updateChapter(chapter.key, patch))
+    setBusy(false)
   }
 
   async function uploadChapterCover(file: File) {
     setBusy(true); setErr(null)
-    try {
-      const path = `ch-${chapter.key}/${Date.now()}.${file.name.split('.').pop() || 'jpg'}`
-      const { error } = await supabase.storage.from('course-covers').upload(path, file, { upsert: true })
-      if (error) throw error
-      const { data } = supabase.storage.from('course-covers').getPublicUrl(path)
-      await save({ cover_url: data.publicUrl })
-    } catch (e) { setErr(e instanceof Error ? e.message : String(e)); setBusy(false) }
+    setErr(await content.uploadChapterCover(chapter.key, file))
+    setBusy(false)
   }
 
   async function uploadMaterial(file: File, kind: 'video' | 'doc') {
     setBusy(true); setErr(null)
-    try {
-      const path = `${chapter.key}/${Date.now()}-${file.name.replace(/[^\w.\-]/g, '_')}`
-      const { error } = await supabase.storage.from('course-videos').upload(path, file)
-      if (error) throw error
-      const { error: e2 } = await supabase.from('course_videos').insert({
-        chapter_key: chapter.key, label: file.name.replace(/\.\w+$/, ''), kind, storage_path: path,
-        sort_no: (materials.at(-1)?.sort_no ?? 0) + 10,
-      })
-      if (e2) throw e2
-    } catch (e) { setErr(e instanceof Error ? e.message : String(e)) }
-    setBusy(false); onChanged()
+    setErr(await content.uploadMaterial(chapter.key, file, kind, materials.at(-1)?.sort_no ?? 0))
+    setBusy(false)
   }
 
   async function addSection() {
-    const { error } = await supabase.from('course_sections').insert({
+    const { data, error } = await supabase.from('course_sections').insert({
       chapter_key: chapter.key, heading: '新小節',
       sort_no: (sections.at(-1)?.sort_no ?? 0) + 10,
-    })
-    if (error) setErr(error.message)
-    const { data } = await supabase.from('course_sections').select('*').eq('chapter_key', chapter.key).order('sort_no')
-    setSections((data as Section[] | null) ?? [])
+    }).select().single()
+    if (error) { setErr(error.message); return }
+    setSections(ss => [...ss, data as Section])
   }
 
   return (
@@ -305,7 +251,7 @@ function ChapterEditor({ chapter, materials, onChanged }: {
 
           {sections.map(s => <SectionEditor key={s.id} section={s} />)}
           {materials.map(m => (
-            <MaterialAdminRow key={m.id} material={m} onChanged={onChanged} />
+            <MaterialAdminRow key={m.id} material={m} onToggle={() => content.toggleMaterial(m)} />
           ))}
 
           <div className="inline-form" style={{ marginTop: 10 }}>
@@ -358,12 +304,12 @@ function SectionEditor({ section }: { section: Section }) {
   )
 }
 
-function MaterialAdminRow({ material, onChanged }: { material: Material; onChanged: () => void }) {
+function MaterialAdminRow({ material, onToggle }: { material: Material; onToggle: () => Promise<string | null> }) {
   const [busy, setBusy] = useState(false)
   async function toggle() {
     setBusy(true)
-    await supabase.from('course_videos').update({ is_active: !material.is_active }).eq('id', material.id)
-    setBusy(false); onChanged()
+    await onToggle()
+    setBusy(false)
   }
   return (
     <div className="arow">
