@@ -17,6 +17,7 @@ export function useProgress(userId: string | null) {
   useEffect(() => {
     let alive = true
     if (!userId) { setProg({}); setLoaded(true); return }
+    setLoaded(false)
     supabase.from('video_progress').select('*').then(({ data }) => {
       if (!alive) return
       const map: Record<number, Progress> = {}

@@ -10,7 +10,8 @@ import { countProgress, isDone, nextToWatch, playable } from '../lib/progress'
 // 不登入也看得到這一頁（招生用）；內容（教材列）由 RLS 決定撈不撈得到。
 export function CoursePage() {
   const { id } = useParams()
-  const courseId = Number(id) || null
+  const idNum = Number(id)
+  const courseId = id !== undefined && !Number.isNaN(idNum) ? idNum : null
   const navigate = useNavigate()
   const { userId, profile, loading: authLoading } = useAuth()
   const cat = useCatalog()
