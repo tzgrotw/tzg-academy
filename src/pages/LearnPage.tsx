@@ -24,7 +24,14 @@ export function LearnPage() {
   const chapter = cat.chapters.find(c => c.key === chapterKey) ?? null
   const course = chapter ? cat.courses.find(c => c.id === chapter.course_id) ?? null : null
   const chapters = course ? cat.chaptersOf(course.id) : []
-  const chNo = chapters.find(c => c.key === chapterKey)?.no ?? 0
+  // chapters（僅 is_active）找不到時，代表這是管理員在預覽未上架的章節——
+  // 改從該課程全部章節（含未上架）依相同排序算章節號，不要讓畫面顯示「第 0 章」。
+  const chNo = chapters.find(c => c.key === chapterKey)?.no ?? (course
+    ? cat.chapters
+        .filter(c => c.course_id === course.id)
+        .sort((a, b) => a.sort_no - b.sort_no || a.key.localeCompare(b.key))
+        .findIndex(c => c.key === chapterKey) + 1
+    : 0)
 
   useEffect(() => {
     let alive = true

@@ -37,10 +37,8 @@ export function CatalogPage() {
         )}
         <div className="grid">
           {shown.map(c => {
-            const chs = cat.chaptersOf(c.id)
-            const keys = new Set(chs.map(ch => ch.key))
-            return <CourseCard key={c.id} course={c} chapterCount={chs.length}
-              videoCount={cat.materials.filter(m => keys.has(m.chapter_key) && m.kind === 'video' && m.is_active).length} />
+            const { chapterCount, videoCount } = cat.courseStats(c.id)
+            return <CourseCard key={c.id} course={c} chapterCount={chapterCount} videoCount={videoCount} />
           })}
         </div>
       </div>
