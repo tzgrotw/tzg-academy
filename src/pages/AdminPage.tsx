@@ -4,20 +4,21 @@ import { Page } from '../components/Shell'
 import { useAuth } from '../hooks/useAuth'
 import { useAdminMembers } from '../hooks/useAdminMembers'
 import { useAdminContent } from '../hooks/useAdminContent'
+import { useAdminSubmissions } from '../hooks/useAdminSubmissions'
 import { supabase } from '../lib/supabase'
 import { AUDIENCE_LABEL, TIER_LABEL } from '../lib/tier'
 import { IconCheck, IconChevron, IconFileText, IconFilm, IconTrash } from '../components/icons'
 import { ConfirmProvider, useConfirm } from '../components/ConfirmDialog'
 import { commitOrder, DragHandle, SortableList, type DragHandleProps } from '../components/Sortable'
-import type { Audience, Chapter, Course, Material, Section, Tier } from '../lib/types'
+import type { Assessment, AssessmentKind, AssessmentSubmission, Audience, Chapter, Course, Material, QuizQuestion, Section, Tier } from '../lib/types'
 
-// 後台——兩個分頁：會員（搜尋＋一鍵改身分）、課程（課程列表 → 點進去看該課的章節/教材）。
+// 後台——三個分頁：會員（搜尋＋一鍵改身分）、課程（課程列表 → 點進去看該課的章節/教材/測驗）、作業批改。
 // 課程結構跟課程設定分開兩塊；排序用拖曳（SortableList）；刪除都走 ConfirmDialog，不用瀏覽器內建 confirm()。
-// 資料存取都在 hooks/useAdminMembers、hooks/useAdminContent；這裡只管畫面。
+// 資料存取都在 hooks/useAdminMembers、hooks/useAdminContent、hooks/useAdminSubmissions；這裡只管畫面。
 
 export function AdminPage() {
   const { profile, loading } = useAuth()
-  const [tab, setTab] = useState<'members' | 'content'>('members')
+  const [tab, setTab] = useState<'members' | 'content' | 'grading'>('members')
 
   if (loading) return <Page><div className="wrap"><div className="skel" style={{ marginTop: 40 }} /></div></Page>
   if (profile?.tier !== 'admin') return <Navigate to="/" replace />
@@ -31,9 +32,10 @@ export function AdminPage() {
             <div className="admin-tabs">
               <button className={tab === 'members' ? 'on' : ''} onClick={() => setTab('members')}>會員</button>
               <button className={tab === 'content' ? 'on' : ''} onClick={() => setTab('content')}>課程</button>
+              <button className={tab === 'grading' ? 'on' : ''} onClick={() => setTab('grading')}>作業批改</button>
             </div>
           </div>
-          {tab === 'members' ? <MembersTab /> : <ContentTab />}
+          {tab === 'members' ? <MembersTab /> : tab === 'content' ? <ContentTab /> : <GradingTab />}
         </div>
       </Page>
     </ConfirmProvider>
@@ -233,6 +235,7 @@ function ChapterCard({ chapter, handle, content, confirm }: {
   }, [open, chapter.key])
 
   const materials = content.materials.filter(m => m.chapter_key === chapter.key).sort((a, b) => a.sort_no - b.sort_no)
+  const assessments = content.assessments.filter(a => a.chapter_key === chapter.key).sort((a, b) => a.sort_no - b.sort_no)
 
   async function save(patch: Partial<Chapter>) {
     setBusy(true); setErr(null)
@@ -273,6 +276,20 @@ function ChapterCard({ chapter, handle, content, confirm }: {
 
   function reorderMaterials(newOrder: Material[]) {
     commitOrder(newOrder, (m, sortNo) => void content.updateMaterial(m.id, { sort_no: sortNo }))
+  }
+
+  function reorderAssessments(newOrder: Assessment[]) {
+    commitOrder(newOrder, (a, sortNo) => void content.updateAssessment(a.id, { sort_no: sortNo }))
+  }
+
+  async function addAssessment(kind: AssessmentKind) {
+    setErr(await content.addAssessment(chapter.key, kind, assessments.at(-1)?.sort_no ?? 0))
+  }
+
+  async function deleteAssessment(a: Assessment) {
+    const ok = await confirm(`確定要刪除「${a.title}」這份${a.kind === 'quiz' ? '測驗' : '作業'}？學員的作答／繳交紀錄會一起砍掉，不能復原。`, { danger: true })
+    if (!ok) return
+    setErr(await content.deleteAssessment(a.id))
   }
 
   function reorderSections(newOrder: Section[]) {
@@ -360,8 +377,210 @@ function ChapterCard({ chapter, handle, content, confirm }: {
             <button className="btn-line" disabled={busy || !ytUrl.trim()} onClick={() => void addYoutube()}>＋加 YouTube 影片</button>
           </div>
           {err && <p className="formerr">{err}</p>}
+
+          <div className="curr-section-hd" style={{ marginTop: 20 }}><h4>測驗／作業（{assessments.length}）</h4></div>
+          <SortableList items={assessments} getId={a => String(a.id)} onReorder={reorderAssessments}>
+            {(a, aHandle) => (
+              <AssessmentEditor assessment={a} handle={aHandle} content={content} confirm={confirm}
+                onDelete={() => void deleteAssessment(a)} />
+            )}
+          </SortableList>
+          <div className="inline-form" style={{ marginTop: 10 }}>
+            <button className="btn-line" onClick={() => void addAssessment('quiz')}>＋加測驗</button>
+            <button className="btn-line" onClick={() => void addAssessment('assignment')}>＋加作業</button>
+          </div>
         </div>
       )}
+    </div>
+  )
+}
+
+/* ───────────────────────── 測驗／作業編輯 ───────────────────────── */
+
+function AssessmentEditor({ assessment, handle, content, confirm, onDelete }: {
+  assessment: Assessment
+  handle: DragHandleProps
+  content: AdminContent
+  confirm: Confirm
+  onDelete: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [title, setTitle] = useState(assessment.title)
+  const [instructions, setInstructions] = useState(assessment.instructions)
+  const [passPct, setPassPct] = useState(assessment.pass_pct)
+  const [busy, setBusy] = useState(false)
+  const [saved, setSaved] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+
+  async function save() {
+    setBusy(true); setSaved(false); setErr(null)
+    const patch: Partial<Assessment> = { title, instructions }
+    if (assessment.kind === 'quiz') patch.pass_pct = passPct
+    const e = await content.updateAssessment(assessment.id, patch)
+    setErr(e); setBusy(false)
+    if (!e) setSaved(true)
+  }
+
+  async function toggleActive() {
+    setErr(await content.updateAssessment(assessment.id, { is_active: !assessment.is_active }))
+  }
+
+  return (
+    <div className="chapter-card" style={{ marginTop: 10 }}>
+      <div className="chapter-hd">
+        <DragHandle {...handle} />
+        <span className={`kindchip ${assessment.kind}`}>{assessment.kind === 'quiz' ? '測驗' : '作業'}</span>
+        <div className="grow" onClick={() => setOpen(o => !o)}>
+          <b style={{ fontSize: 13.5 }}>{assessment.title}</b>
+          <span className="sub">
+            {assessment.is_active ? '' : '已停用・'}
+            {assessment.kind === 'quiz' ? `答對 ${assessment.pass_pct}% 算過` : '學員上傳・管理員手動審核'}
+          </span>
+        </div>
+        <button className="icon-btn danger" title="刪除" onClick={onDelete}><IconTrash size={15} /></button>
+        <span onClick={() => setOpen(o => !o)} style={{ cursor: 'pointer', color: 'var(--tx-muted)' }}><IconChevron size={15} open={open} /></span>
+      </div>
+      {open && (
+        <div className="chapter-body">
+          <div className="inline-form" style={{ marginTop: 0 }}>
+            <input value={title} onChange={e => setTitle(e.target.value)} placeholder="標題" style={{ flex: 1, minWidth: 200 }} />
+            {assessment.kind === 'quiz' && (
+              <span className="i" style={{ fontSize: 13, gap: 6, display: 'inline-flex', alignItems: 'center' }}>
+                及格
+                <input type="number" min={0} max={100} value={passPct}
+                  onChange={e => setPassPct(Number(e.target.value))} style={{ width: 64 }} />
+                %
+              </span>
+            )}
+            <button className="btn btn-s" disabled={busy} onClick={() => void save()}>{saved ? <><IconCheck size={13} />存好了</> : '存'}</button>
+            <button className="btn-line" onClick={() => void toggleActive()}>{assessment.is_active ? '停用' : '啟用'}</button>
+          </div>
+          <textarea className="note-ta" style={{ minHeight: 60 }} value={instructions}
+            onChange={e => setInstructions(e.target.value)}
+            placeholder={assessment.kind === 'quiz' ? '測驗說明（選填）' : '作業說明——要交什麼、格式、注意事項'} />
+          {err && <p className="formerr">{err}</p>}
+          {assessment.kind === 'quiz' && <QuizQuestionEditor assessmentId={assessment.id} confirm={confirm} />}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function QuizQuestionEditor({ assessmentId, confirm }: { assessmentId: number; confirm: Confirm }) {
+  const [questions, setQuestions] = useState<QuizQuestion[]>([])
+  const [loaded, setLoaded] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+
+  useEffect(() => {
+    let alive = true
+    supabase.from('quiz_questions').select('*').eq('assessment_id', assessmentId).order('sort_no').order('id')
+      .then(({ data }) => { if (alive) { setQuestions((data as QuizQuestion[] | null) ?? []); setLoaded(true) } })
+    return () => { alive = false }
+  }, [assessmentId])
+
+  async function addQuestion() {
+    const { data, error } = await supabase.from('quiz_questions').insert({
+      assessment_id: assessmentId, question: '新題目', options: ['選項一', '選項二'], correct_index: 0,
+      sort_no: (questions.at(-1)?.sort_no ?? 0) + 10,
+    }).select().single()
+    if (error) { setErr(error.message); return }
+    setQuestions(qs => [...qs, data as QuizQuestion])
+  }
+
+  function reorder(newOrder: QuizQuestion[]) {
+    setQuestions(newOrder)
+    commitOrder(newOrder, (q, sortNo) => { void supabase.from('quiz_questions').update({ sort_no: sortNo }).eq('id', q.id) })
+  }
+
+  async function deleteQuestion(q: QuizQuestion) {
+    const ok = await confirm('確定要刪除這一題？不能復原。', { danger: true })
+    if (!ok) return
+    const { error } = await supabase.from('quiz_questions').delete().eq('id', q.id)
+    if (error) { setErr(error.message); return }
+    setQuestions(qs => qs.filter(x => x.id !== q.id))
+  }
+
+  function patchLocal(id: number, patch: Partial<QuizQuestion>) {
+    setQuestions(qs => qs.map(q => q.id === id ? { ...q, ...patch } : q))
+  }
+
+  return (
+    <div style={{ marginTop: 16 }}>
+      <div className="curr-section-hd"><h4>題目（{questions.length}）</h4></div>
+      {!loaded && <div className="skel" />}
+      {loaded && questions.length === 0 && <p className="muted" style={{ fontSize: 13 }}>還沒有題目，點下面加一題。</p>}
+      <SortableList items={questions} getId={q => String(q.id)} onReorder={reorder}>
+        {(q, qHandle) => (
+          <QuestionRow question={q} handle={qHandle} onPatch={patchLocal} onDelete={() => void deleteQuestion(q)} />
+        )}
+      </SortableList>
+      <p style={{ marginTop: 10 }}><button className="btn-line" onClick={() => void addQuestion()}>＋加一題</button></p>
+      {err && <p className="formerr">{err}</p>}
+    </div>
+  )
+}
+
+function QuestionRow({ question, handle, onPatch, onDelete }: {
+  question: QuizQuestion
+  handle: DragHandleProps
+  onPatch: (id: number, patch: Partial<QuizQuestion>) => void
+  onDelete: () => void
+}) {
+  const [text, setText] = useState(question.question)
+  const [options, setOptions] = useState(question.options)
+  const [correct, setCorrect] = useState(question.correct_index)
+  const [busy, setBusy] = useState(false)
+  const [saved, setSaved] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+
+  async function save() {
+    setBusy(true); setSaved(false); setErr(null)
+    const cleanOptions = options.map(o => o.trim()).filter(Boolean)
+    if (cleanOptions.length < 2) { setErr('至少要有兩個選項'); setBusy(false); return }
+    const fixedCorrect = Math.min(correct, cleanOptions.length - 1)
+    const { error } = await supabase.from('quiz_questions')
+      .update({ question: text, options: cleanOptions, correct_index: fixedCorrect }).eq('id', question.id)
+    setBusy(false)
+    if (error) { setErr(error.message); return }
+    setOptions(cleanOptions); setCorrect(fixedCorrect); setSaved(true)
+    onPatch(question.id, { question: text, options: cleanOptions, correct_index: fixedCorrect })
+  }
+
+  function updateOption(i: number, v: string) {
+    setOptions(os => os.map((o, idx) => idx === i ? v : o))
+  }
+  function addOption() {
+    setOptions(os => [...os, ''])
+  }
+  function removeOption(i: number) {
+    setOptions(os => os.filter((_, idx) => idx !== i))
+    setCorrect(c => (c === i ? 0 : c > i ? c - 1 : c))
+  }
+
+  return (
+    <div style={{ background: '#FBF8EF', borderRadius: 12, padding: '12px 14px', marginTop: 10 }}>
+      <div className="inline-form" style={{ marginTop: 0 }}>
+        <DragHandle {...handle} />
+        <input value={text} onChange={e => setText(e.target.value)} placeholder="題目" style={{ flex: 1, minWidth: 200 }} />
+        <button className="btn btn-s" disabled={busy} onClick={() => void save()}>{saved ? <><IconCheck size={13} />存好了</> : '存'}</button>
+        <button className="icon-btn danger" title="刪除這題" onClick={onDelete}><IconTrash size={14} /></button>
+      </div>
+      <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {options.map((opt, i) => (
+          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <input type="radio" name={`correct-${question.id}`} checked={correct === i}
+              onChange={() => setCorrect(i)} title="標成正確答案" />
+            <input value={opt} onChange={e => updateOption(i, e.target.value)} placeholder={`選項 ${i + 1}`}
+              style={{ flex: 1, border: '1px solid rgba(197,179,130,.55)', borderRadius: 10, padding: '7px 10px', font: 'inherit', fontSize: 13, background: '#FFFDF7' }} />
+            {options.length > 2 && (
+              <button className="icon-btn danger" title="刪除選項" onClick={() => removeOption(i)}><IconTrash size={13} /></button>
+            )}
+          </div>
+        ))}
+      </div>
+      <button className="btn-line" style={{ marginTop: 8 }} onClick={addOption}>＋加選項</button>
+      <p style={{ marginTop: 4, fontSize: 11.5, color: 'var(--tx-muted)' }}>圈選左邊的圓點標記正確答案</p>
+      {err && <p className="formerr">{err}</p>}
     </div>
   )
 }
@@ -422,6 +641,109 @@ function MaterialAdminRow({ material, handle, onToggle, onDelete }: {
         {material.is_active ? '停用' : '啟用'}
       </button>
       <button className="icon-btn danger" disabled={busy} title="刪除教材" onClick={onDelete}><IconTrash size={14} /></button>
+    </div>
+  )
+}
+
+/* ───────────────────────── 作業批改 ───────────────────────── */
+
+function GradingTab() {
+  const content = useAdminContent()
+  const members = useAdminMembers()
+  const subs = useAdminSubmissions()
+  const [showAll, setShowAll] = useState(false)
+
+  const assignments = content.assessments.filter(a => a.kind === 'assignment')
+  const assignmentIds = new Set(assignments.map(a => a.id))
+  const rows = subs.rows
+    .filter(r => assignmentIds.has(r.assessment_id))
+    .filter(r => showAll || r.status === 'pending')
+
+  const loaded = content.loaded && members.loaded && subs.loaded
+
+  return (
+    <div className="acard">
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <h3 style={{ flex: 1 }}>作業批改</h3>
+        <label className="i" style={{ fontSize: 13, gap: 6, display: 'inline-flex', alignItems: 'center', color: 'var(--tx-muted)' }}>
+          <input type="checkbox" checked={showAll} onChange={e => setShowAll(e.target.checked)} />
+          顯示已批改的
+        </label>
+      </div>
+      {!loaded && <div className="skel" />}
+      {loaded && rows.length === 0 && (
+        <p className="muted" style={{ marginTop: 16, fontSize: 13 }}>
+          {showAll ? '還沒有任何作業繳交紀錄。' : '目前沒有待審核的作業——都批完了。'}
+        </p>
+      )}
+      {rows.map(r => {
+        const assessment = assignments.find(a => a.id === r.assessment_id)
+        const chapter = assessment ? content.chapters.find(c => c.key === assessment.chapter_key) : null
+        const course = chapter ? content.courses.find(c => c.id === chapter.course_id) : null
+        const member = members.rows.find(p => p.user_id === r.user_id)
+        return (
+          <SubmissionRow key={`${r.user_id}:${r.assessment_id}`} submission={r}
+            title={assessment?.title ?? '（測驗／作業已刪除）'}
+            path={course ? `${course.title} ‹ ${chapter?.title ?? ''}` : ''}
+            memberLabel={member ? `${member.name || '（沒填名字）'}・${member.email}` : r.user_id}
+            fileUrl={subs.fileUrl} busy={subs.busyKey === `${r.user_id}:${r.assessment_id}`}
+            onGrade={(status, feedback) => subs.grade(r.user_id, r.assessment_id, status, feedback)} />
+        )
+      })}
+    </div>
+  )
+}
+
+function SubmissionRow({ submission, title, path, memberLabel, fileUrl, busy, onGrade }: {
+  submission: AssessmentSubmission
+  title: string
+  path: string
+  memberLabel: string
+  fileUrl: (path: string) => Promise<string | null>
+  busy: boolean
+  onGrade: (status: 'passed' | 'failed', feedback: string) => Promise<string | null>
+}) {
+  const [feedback, setFeedback] = useState(submission.feedback ?? '')
+  const [err, setErr] = useState<string | null>(null)
+  const [signing, setSigning] = useState(false)
+
+  async function openFile() {
+    if (!submission.file_path) return
+    setSigning(true)
+    const url = await fileUrl(submission.file_path)
+    setSigning(false)
+    if (url) window.open(url, '_blank', 'noopener')
+    else setErr('檔案連結產生失敗，再試一次')
+  }
+
+  async function grade(status: 'passed' | 'failed') {
+    setErr(await onGrade(status, feedback))
+  }
+
+  const statusLabel = submission.status === 'pending' ? '待審核' : submission.status === 'passed' ? '通過' : '退回'
+
+  return (
+    <div className="arow" style={{ alignItems: 'flex-start' }}>
+      <div className="grow">
+        <b>{title}</b>
+        <span className="sub">{path}・{memberLabel}</span>
+        <span className="sub">{new Date(submission.submitted_at).toLocaleString('zh-TW')} 繳交・{statusLabel}</span>
+        {submission.note && <p style={{ fontSize: 13, marginTop: 6, color: 'var(--tx-soft)' }}>{submission.note}</p>}
+        <div className="inline-form" style={{ marginTop: 8 }}>
+          {submission.file_path && (
+            <button className="btn-line" disabled={signing} onClick={() => void openFile()}>
+              {signing ? '產生連結中…' : '查看繳交檔案'}
+            </button>
+          )}
+        </div>
+        <textarea className="note-ta" style={{ minHeight: 50, marginTop: 8 }} value={feedback}
+          onChange={e => setFeedback(e.target.value)} placeholder="給學員的評語（選填）" />
+        {err && <p className="formerr">{err}</p>}
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <button className="btn btn-s" disabled={busy} onClick={() => void grade('passed')}>通過</button>
+        <button className="btn-line" disabled={busy} onClick={() => void grade('failed')}>退回</button>
+      </div>
     </div>
   )
 }

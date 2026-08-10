@@ -2,7 +2,7 @@ import { useCallback } from 'react'
 import { useCatalog } from './useCatalog'
 import { supabase } from '../lib/supabase'
 import { extractYoutubeId } from '../lib/youtube'
-import type { Chapter, Course, Material } from '../lib/types'
+import type { Assessment, AssessmentKind, Chapter, Course, Material } from '../lib/types'
 
 const newChapterKey = () => `ch${Date.now().toString(36)}`
 
@@ -99,7 +99,31 @@ export function useAdminContent() {
   const toggleMaterial = useCallback((material: Material) =>
     updateMaterial(material.id, { is_active: !material.is_active }), [updateMaterial])
 
-  // 三層都有 FK cascade（課→章→教材），DB 那邊砍一筆會連下層一起清掉；
+  const addAssessment = useCallback(async (chapterKey: string, kind: AssessmentKind, afterSortNo: number) => {
+    const { data, error } = await supabase.from('course_assessments').insert({
+      chapter_key: chapterKey, kind, title: kind === 'quiz' ? '新測驗' : '新作業',
+      sort_no: afterSortNo + 10,
+    }).select().single()
+    if (error) return error.message
+    cat.addAssessmentLocal(data as Assessment)
+    return null
+  }, [cat])
+
+  const updateAssessment = useCallback(async (id: number, patch: Partial<Assessment>) => {
+    const { error } = await supabase.from('course_assessments').update(patch).eq('id', id)
+    if (error) return error.message
+    cat.patchAssessment(id, patch)
+    return null
+  }, [cat])
+
+  const deleteAssessment = useCallback(async (id: number) => {
+    const { error } = await supabase.from('course_assessments').delete().eq('id', id)
+    if (error) return error.message
+    cat.removeAssessmentLocal(id)
+    return null
+  }, [cat])
+
+  // 三層都有 FK cascade（課→章→教材／測驗），DB 那邊砍一筆會連下層一起清掉；
   // 本地也對應地清（removeCourseLocal/removeChapterLocal 會一起濾掉子層）。
   const deleteCourse = useCallback(async (id: number) => {
     const { error } = await supabase.from('courses').delete().eq('id', id)
@@ -127,5 +151,6 @@ export function useAdminContent() {
     createCourse, updateCourse, uploadCourseCover, deleteCourse,
     addChapter, updateChapter, uploadChapterCover, deleteChapter,
     uploadMaterial, addYoutubeMaterial, updateMaterial, toggleMaterial, deleteMaterial,
+    addAssessment, updateAssessment, deleteAssessment,
   }
 }

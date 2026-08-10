@@ -69,3 +69,44 @@ export interface Reward {
   title: string
   message: string
 }
+
+export type AssessmentKind = 'quiz' | 'assignment'
+export type SubmissionStatus = 'pending' | 'passed' | 'failed'
+
+export interface Assessment {
+  id: number
+  chapter_key: string
+  kind: AssessmentKind
+  title: string
+  instructions: string
+  pass_pct: number
+  sort_no: number
+  is_active: boolean
+}
+
+// 學員端題目——特意不含 correct_index，只能透過 fn_quiz_questions() RPC 拿到
+export interface QuizQuestionPublic {
+  id: number
+  question: string
+  options: string[]
+  sort_no: number
+}
+
+// 後台編輯用（quiz_questions 表只有 admin 讀得到，含正確答案）
+export interface QuizQuestion extends QuizQuestionPublic {
+  assessment_id: number
+  correct_index: number
+}
+
+export interface AssessmentSubmission {
+  user_id: string
+  assessment_id: number
+  answers: Record<string, number> | null
+  score_pct: number | null
+  file_path: string | null
+  note: string | null
+  status: SubmissionStatus
+  feedback: string | null
+  submitted_at: string
+  reviewed_at: string | null
+}
