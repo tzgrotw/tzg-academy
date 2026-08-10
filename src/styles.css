@@ -43,6 +43,8 @@ button { font-family: inherit; }
 /* ── 首頁 ── */
 .hero { position: relative; overflow: hidden; background: var(--ink); }
 .hero img.bg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: .85; }
+/* 手機螢幕窄，橫幅照片預設置中裁切會把主體（人物）剪掉，改成偏右裁切對準她 */
+@media (max-width: 640px) { .hero img.bg { object-position: 80% center; } }
 .hero .veil { position: absolute; inset: 0; background: linear-gradient(105deg, rgba(23,19,7,.92) 0%, rgba(23,19,7,.72) 42%, rgba(23,19,7,.30) 100%); }
 .hero .in { position: relative; padding: 88px 0 96px; }
 .eyebrow { font-size: 12px; letter-spacing: .5em; color: var(--gold); font-weight: 700; }
