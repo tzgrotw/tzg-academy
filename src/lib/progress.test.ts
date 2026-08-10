@@ -11,6 +11,7 @@ function material(overrides: Partial<Material> & { id: number; chapter_key: stri
     duration_sec: 300,
     sort_no: overrides.id,
     is_active: true,
+    deleted_at: null,
     ...overrides,
   }
 }
@@ -36,14 +37,15 @@ describe('isDone', () => {
 })
 
 describe('playable', () => {
-  it('only counts active videos with a storage path', () => {
+  it('only counts active videos with a storage path or a YouTube id', () => {
     const rows = [
       material({ id: 1, chapter_key: 'c1', kind: 'video', is_active: true, storage_path: 'x.mp4' }),
       material({ id: 2, chapter_key: 'c1', kind: 'doc', is_active: true, storage_path: 'x.pdf' }),
       material({ id: 3, chapter_key: 'c1', kind: 'video', is_active: false, storage_path: 'x.mp4' }),
       material({ id: 4, chapter_key: 'c1', kind: 'video', is_active: true, storage_path: null }),
+      material({ id: 5, chapter_key: 'c1', kind: 'video', is_active: true, storage_path: null, youtube_id: 'abc123' }),
     ]
-    expect(playable(rows).map(r => r.id)).toEqual([1])
+    expect(playable(rows).map(r => r.id)).toEqual([1, 5])
   })
 })
 

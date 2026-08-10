@@ -2,7 +2,7 @@ import { useCallback } from 'react'
 import { useCatalog } from './useCatalog'
 import { supabase } from '../lib/supabase'
 import { extractYoutubeId } from '../lib/youtube'
-import type { Chapter, Course, Material } from '../lib/types'
+import type { Assessment, AssessmentKind, Chapter, Course, Material, Reward } from '../lib/types'
 
 const newChapterKey = () => `ch${Date.now().toString(36)}`
 
@@ -99,26 +99,94 @@ export function useAdminContent() {
   const toggleMaterial = useCallback((material: Material) =>
     updateMaterial(material.id, { is_active: !material.is_active }), [updateMaterial])
 
-  // 三層都有 FK cascade（課→章→教材），DB 那邊砍一筆會連下層一起清掉；
+  const updateMaterialYoutubeId = useCallback(async (id: number, urlOrId: string) => {
+    const youtubeId = extractYoutubeId(urlOrId)
+    if (!youtubeId) return '看不出來是哪支 YouTube 影片——貼完整網址或 11 碼的影片 ID'
+    return updateMaterial(id, { youtube_id: youtubeId })
+  }, [updateMaterial])
+
+  const addAssessment = useCallback(async (chapterKey: string, kind: AssessmentKind, afterSortNo: number) => {
+    const { data, error } = await supabase.from('course_assessments').insert({
+      chapter_key: chapterKey, kind, title: kind === 'quiz' ? '新測驗' : '新作業',
+      sort_no: afterSortNo + 10,
+    }).select().single()
+    if (error) return error.message
+    cat.addAssessmentLocal(data as Assessment)
+    return null
+  }, [cat])
+
+  const updateAssessment = useCallback(async (id: number, patch: Partial<Assessment>) => {
+    const { error } = await supabase.from('course_assessments').update(patch).eq('id', id)
+    if (error) return error.message
+    cat.patchAssessment(id, patch)
+    return null
+  }, [cat])
+
+  const deleteAssessment = useCallback(async (id: number) => {
+    const { error } = await supabase.from('course_assessments')
+      .update({ deleted_at: new Date().toISOString() }).eq('id', id)
+    if (error) return error.message
+    cat.removeAssessmentLocal(id)
+    return null
+  }, [cat])
+
+  // 刪除都是軟刪除（deleted_at）不是真的砍掉——後台「垃圾桶」分頁救得回來。
+  // 課→章→教材／測驗三層砍上層要連下層一起標記，不然子層會變成撈不到、但也沒進垃圾桶的孤兒資料；
   // 本地也對應地清（removeCourseLocal/removeChapterLocal 會一起濾掉子層）。
   const deleteCourse = useCallback(async (id: number) => {
-    const { error } = await supabase.from('courses').delete().eq('id', id)
+    const now = new Date().toISOString()
+    const chapterKeys = cat.chapters.filter(c => c.course_id === id).map(c => c.key)
+    const { error } = await supabase.from('courses').update({ deleted_at: now }).eq('id', id)
     if (error) return error.message
+    if (chapterKeys.length > 0) {
+      await supabase.from('course_chapters').update({ deleted_at: now }).in('key', chapterKeys)
+      await supabase.from('course_videos').update({ deleted_at: now }).in('chapter_key', chapterKeys)
+      await supabase.from('course_assessments').update({ deleted_at: now }).in('chapter_key', chapterKeys)
+    }
     cat.removeCourseLocal(id)
     return null
   }, [cat])
 
   const deleteChapter = useCallback(async (key: string) => {
-    const { error } = await supabase.from('course_chapters').delete().eq('key', key)
+    const now = new Date().toISOString()
+    const { error } = await supabase.from('course_chapters').update({ deleted_at: now }).eq('key', key)
     if (error) return error.message
+    await supabase.from('course_videos').update({ deleted_at: now }).eq('chapter_key', key)
+    await supabase.from('course_assessments').update({ deleted_at: now }).eq('chapter_key', key)
     cat.removeChapterLocal(key)
     return null
   }, [cat])
 
   const deleteMaterial = useCallback(async (id: number) => {
-    const { error } = await supabase.from('course_videos').delete().eq('id', id)
+    const { error } = await supabase.from('course_videos')
+      .update({ deleted_at: new Date().toISOString() }).eq('id', id)
     if (error) return error.message
     cat.removeMaterialLocal(id)
+    return null
+  }, [cat])
+
+  // 里程碑／證書文案（course_rewards）——after_chapter=null 那筆是結業證書，有值的是章節里程碑。
+  // 這張表沒有軟刪除／cascade，是課程底下獨立的小張表，直接走一般 CRUD。
+  const addReward = useCallback(async (courseId: number, afterChapter: string | null) => {
+    const { data, error } = await supabase.from('course_rewards').insert({
+      course_id: courseId, after_chapter: afterChapter, title: afterChapter ? '新里程碑' : '結業證書',
+    }).select().single()
+    if (error) return error.message
+    cat.addRewardLocal(data as Reward)
+    return null
+  }, [cat])
+
+  const updateReward = useCallback(async (id: number, patch: Partial<Reward>) => {
+    const { error } = await supabase.from('course_rewards').update(patch).eq('id', id)
+    if (error) return error.message
+    cat.patchReward(id, patch)
+    return null
+  }, [cat])
+
+  const deleteReward = useCallback(async (id: number) => {
+    const { error } = await supabase.from('course_rewards').delete().eq('id', id)
+    if (error) return error.message
+    cat.removeRewardLocal(id)
     return null
   }, [cat])
 
@@ -126,6 +194,8 @@ export function useAdminContent() {
     ...cat,
     createCourse, updateCourse, uploadCourseCover, deleteCourse,
     addChapter, updateChapter, uploadChapterCover, deleteChapter,
-    uploadMaterial, addYoutubeMaterial, updateMaterial, toggleMaterial, deleteMaterial,
+    uploadMaterial, addYoutubeMaterial, updateMaterial, toggleMaterial, updateMaterialYoutubeId, deleteMaterial,
+    addAssessment, updateAssessment, deleteAssessment,
+    addReward, updateReward, deleteReward,
   }
 }

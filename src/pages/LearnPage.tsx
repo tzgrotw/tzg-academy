@@ -2,8 +2,10 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, Navigate, useParams } from 'react-router-dom'
 import { Page } from '../components/Shell'
 import { VideoRow, DocRow } from '../components/MaterialRow'
+import { AssessmentBlock } from '../components/AssessmentBlock'
 import { useCatalog } from '../hooks/useCatalog'
 import { useProgress } from '../hooks/useProgress'
+import { useSubmissions } from '../hooks/useSubmissions'
 import { useAuth } from '../hooks/useAuth'
 import { supabase } from '../lib/supabase'
 import { canAccess } from '../lib/tier'
@@ -18,6 +20,7 @@ export function LearnPage() {
   const { userId, profile, loading: authLoading } = useAuth()
   const cat = useCatalog()
   const { progressOf, mark, prog } = useProgress(userId)
+  const { submissionOf, submitQuiz, submitAssignment } = useSubmissions(userId)
 
   const [sections, setSections] = useState<Section[]>([])
   const [secLoaded, setSecLoaded] = useState(false)
@@ -77,6 +80,11 @@ export function LearnPage() {
       .filter(m => m.chapter_key === chapterKey && m.is_active)
       .sort((a, b) => a.sort_no - b.sort_no || a.id - b.id),
     [cat.materials, chapterKey])
+  const assessments = useMemo(
+    () => cat.assessments
+      .filter(a => a.chapter_key === chapterKey && a.is_active)
+      .sort((a, b) => a.sort_no - b.sort_no || a.id - b.id),
+    [cat.assessments, chapterKey])
   const vids = playable(mats)
   const doneCnt = vids.filter(v => isDone(progressOf(v.id))).length
   void prog   // 讓進度更新時重繪列清單
@@ -164,7 +172,13 @@ export function LearnPage() {
             </div>
           )}
 
-          {secLoaded && sections.length === 0 && mats.length === 0 && (
+          {userId && assessments.map(a => (
+            <AssessmentBlock key={a.id} assessment={a} submission={submissionOf(a.id)} userId={userId}
+              onSubmitQuiz={answers => submitQuiz(a.id, answers)}
+              onSubmitAssignment={(filePath, note) => submitAssignment(a.id, filePath, note)} />
+          ))}
+
+          {secLoaded && sections.length === 0 && mats.length === 0 && assessments.length === 0 && (
             <div className="lesson"><h3>內容準備中</h3>
               <p className="muted" style={{ fontSize: 13, marginTop: 8 }}>這一章還在建——建好會出現在這裡。</p></div>
           )}

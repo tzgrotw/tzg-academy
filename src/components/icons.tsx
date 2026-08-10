@@ -110,6 +110,16 @@ export function IconChevron({ size = 16, className, open }: IconProps & { open?:
   )
 }
 
+export function IconClipboard({ size = 14, className }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" className={className} {...base}>
+      <rect x="5.5" y="4.5" width="13" height="17" rx="2" />
+      <rect x="9" y="2.5" width="6" height="3.5" rx="1" />
+      <polyline points="8.5 12.5 11 15 15.5 9.5" />
+    </svg>
+  )
+}
+
 export function IconFileText({ size = 14, className }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" className={className} {...base}>

@@ -2,6 +2,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { Page } from '../components/Shell'
 import { useCatalog } from '../hooks/useCatalog'
 import { useProgress } from '../hooks/useProgress'
+import { useSubmissions } from '../hooks/useSubmissions'
 import { useAuth } from '../hooks/useAuth'
 import { canAccess, AUDIENCE_LABEL, lockHint } from '../lib/tier'
 import { countProgress, isDone, nextToWatch, playable } from '../lib/progress'
@@ -17,9 +18,10 @@ export function CoursePage() {
   const { userId, profile, loading: authLoading } = useAuth()
   const cat = useCatalog()
   const { progressOf, loaded: progLoaded } = useProgress(userId)
+  const { submissionOf, loaded: subLoaded } = useSubmissions(userId)
 
   const course = cat.courses.find(c => c.id === courseId) ?? null
-  const loading = !cat.loaded || authLoading || (!!userId && !progLoaded)
+  const loading = !cat.loaded || authLoading || (!!userId && (!progLoaded || !subLoaded))
 
   if (cat.loaded && !course) {
     return <Page><div className="wrap"><div className="locknote"><h3>找不到這門課</h3>
@@ -39,10 +41,23 @@ export function CoursePage() {
   const rewards = course ? cat.rewards.filter(r => r.course_id === course.id) : []
   const endReward = rewards.find(r => !r.after_chapter) ?? null
 
+  // 一章算不算修完：影片全部看完，「而且」這章的測驗／作業（如果有）都要通過——
+  // 兩邊都空就不算修完（避免空章節自動打勾）。
   const chapterDone = (key: string) => {
     const rows = playable(mats.filter(m => m.chapter_key === key))
-    return rows.length > 0 && rows.every(v => isDone(progressOf(v.id)))
+    const chAssessments = cat.assessments.filter(a => a.chapter_key === key && a.is_active)
+    if (rows.length === 0 && chAssessments.length === 0) return false
+    return rows.every(v => isDone(progressOf(v.id)))
+      && chAssessments.every(a => submissionOf(a.id)?.status === 'passed')
   }
+
+  // 整門課的測驗／作業要全部通過，證書才發得出來——跟章節那份邏輯是同一套規則。
+  const allAssessments = cat.assessments.filter(a => keySet.has(a.chapter_key) && a.is_active)
+  const assessmentsDone = allAssessments.every(a => submissionOf(a.id)?.status === 'passed')
+  const courseDone = !resume && vids.total > 0 && assessmentsDone
+  const nextAssessmentChapter = !resume && vids.total > 0 && !assessmentsDone
+    ? chapters.find(ch => cat.assessments.some(a => a.chapter_key === ch.key && a.is_active && submissionOf(a.id)?.status !== 'passed'))
+    : null
 
   return (
     <Page>
@@ -70,10 +85,15 @@ export function CoursePage() {
                   {vids.total > 0 && vids.done > 0 && <span style={{ color: '#CFC3A0', fontSize: 13 }}>已完成 {pct}%</span>}
                 </>
               )}
-              {open && !resume && vids.total > 0 && (
+              {open && courseDone && (
                 <span className="btn" style={{ background: 'linear-gradient(135deg,#C5B382,#937C44)', color: '#1B1607' }}>
                   <IconAward size={15} /> 這門課修畢了——{endReward?.title ?? '證書'}屬於妳
                 </span>
+              )}
+              {open && nextAssessmentChapter && (
+                <button className="btn btn-m" onClick={() => navigate(`/learn/${nextAssessmentChapter.key}`)}>
+                  ▶&nbsp; 完成測驗／作業・第 {nextAssessmentChapter.no} 章「{nextAssessmentChapter.title}」
+                </button>
               )}
               {open && vids.total === 0 && chapters.length === 0 && (
                 <span style={{ color: '#CFC3A0', fontSize: 14 }}>課程準備中——內容建好會出現在這裡</span>
@@ -98,7 +118,7 @@ export function CoursePage() {
             const rows = playable(mats.filter(m => m.chapter_key === ch.key))
             const doneCnt = rows.filter(v => isDone(progressOf(v.id))).length
             const isNow = resume?.chapter_key === ch.key
-            const complete = rows.length > 0 && doneCnt === rows.length
+            const complete = chapterDone(ch.key)
             const milestone = rewards.find(r => r.after_chapter === ch.key)
             const rowInner = (
               <>
@@ -148,7 +168,9 @@ export function CoursePage() {
           {endReward && (
             <div className="scard">
               <h4>修畢這門課</h4>
-              <p>{vids.total > 0 ? `${vids.total} 支影片全部看完，就能領這門課的專屬證書。` : '課程內容建好後，修畢就發證書。'}</p>
+              <p>{vids.total > 0
+                ? `${vids.total} 支影片全部看完${allAssessments.length > 0 ? '、測驗／作業都通過' : ''}，就能領這門課的專屬證書。`
+                : '課程內容建好後，修畢就發證書。'}</p>
               <div className="cert"><b>{endReward.title}</b>
                 {endReward.message && <p style={{ marginTop: 6, fontSize: 12 }}>{endReward.message}</p>}
               </div>
