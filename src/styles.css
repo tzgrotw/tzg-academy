@@ -10,6 +10,8 @@
   --ribbon: linear-gradient(90deg, #C5B382, #E6007E);
 }
 * { margin: 0; padding: 0; box-sizing: border-box; }
+.i { display: inline-flex; align-items: center; gap: 5px; }
+.i svg { flex: none; }
 html { scroll-behavior: smooth; }
 body { background: var(--paper); color: var(--tx); font-family: "PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif; -webkit-font-smoothing: antialiased; }
 img { max-width: 100%; }
@@ -63,7 +65,7 @@ button { font-family: inherit; }
 .sect p.lead { color: var(--tx-muted); font-size: 15px; max-width: 38em; }
 .feat { display: grid; gap: 20px; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); margin-top: 34px; }
 .feat > div { background: var(--card); border-radius: 18px; box-shadow: var(--shadow); padding: 26px 24px; }
-.feat .ico { width: 44px; height: 44px; border-radius: 12px; background: var(--gold-pale); display: grid; place-items: center; font-size: 20px; }
+.feat .ico { width: 44px; height: 44px; border-radius: 12px; background: var(--gold-pale); display: grid; place-items: center; color: var(--gold-deep); }
 .feat h3 { font-size: 16.5px; font-weight: 800; margin-top: 14px; }
 .feat p { font-size: 13.5px; color: var(--tx-muted); margin-top: 6px; line-height: 1.75; }
 .band { background: linear-gradient(120deg, var(--ink) 0%, var(--ink2) 60%, #332A12 100%); border-radius: 24px; margin: 64px 0; padding: 52px 48px; display: flex; align-items: center; gap: 32px; flex-wrap: wrap; }

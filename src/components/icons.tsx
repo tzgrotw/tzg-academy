@@ -1,0 +1,91 @@
+// 細線條 icon（取代系統 emoji）——單色、承接父層 color，跟金色/暗紅品牌色一致。
+type IconProps = { size?: number; className?: string }
+
+const base = { fill: 'none', stroke: 'currentColor', strokeWidth: 1.6, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const }
+
+export function IconPhone({ size = 20, className }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" className={className} {...base}>
+      <rect x="7" y="2" width="10" height="20" rx="2.4" />
+      <line x1="10.5" y1="18.4" x2="13.5" y2="18.4" />
+    </svg>
+  )
+}
+
+export function IconBookmark({ size = 20, className }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" className={className} {...base}>
+      <path d="M6.5 3h11a1 1 0 0 1 1 1v17l-6.5-4.6L5.5 21V4a1 1 0 0 1 1-1z" />
+    </svg>
+  )
+}
+
+export function IconCrown({ size = 20, className }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" className={className} {...base}>
+      <path d="M4.5 18.5h15l-1.4-8.3-4.3 3.6L12 6l-1.8 7.8-4.3-3.6-1.4 8.3z" strokeLinejoin="round" />
+      <line x1="5.3" y1="21" x2="18.7" y2="21" />
+    </svg>
+  )
+}
+
+export function IconLock({ size = 16, className }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" className={className} {...base}>
+      <rect x="5" y="11" width="14" height="9" rx="2" />
+      <path d="M8 11V7.5a4 4 0 0 1 8 0V11" />
+    </svg>
+  )
+}
+
+export function IconCheck({ size = 14, className }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" className={className} {...base}>
+      <polyline points="5 13 10 18 19 7" />
+    </svg>
+  )
+}
+
+export function IconAward({ size = 16, className }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" className={className} {...base}>
+      <circle cx="12" cy="8.5" r="5.5" />
+      <path d="M8.7 13.3 6.8 22l5.2-3.1 5.2 3.1-1.9-8.7" />
+    </svg>
+  )
+}
+
+export function IconLightbulb({ size = 16, className }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" className={className} {...base}>
+      <path d="M12 2.5a6.5 6.5 0 0 0-3.7 11.8c.55.45.95 1.1.95 1.85V17h5.5v-.85c0-.75.4-1.4.95-1.85A6.5 6.5 0 0 0 12 2.5z" />
+      <line x1="9.7" y1="20.2" x2="14.3" y2="20.2" />
+      <line x1="10.3" y1="17" x2="13.7" y2="17" />
+    </svg>
+  )
+}
+
+export function IconFilm({ size = 14, className }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" className={className} {...base}>
+      <rect x="3" y="4.5" width="18" height="15" rx="2" />
+      <line x1="7.5" y1="4.5" x2="7.5" y2="19.5" />
+      <line x1="16.5" y1="4.5" x2="16.5" y2="19.5" />
+      <line x1="3" y1="9.5" x2="7.5" y2="9.5" />
+      <line x1="3" y1="14.5" x2="7.5" y2="14.5" />
+      <line x1="16.5" y1="9.5" x2="21" y2="9.5" />
+      <line x1="16.5" y1="14.5" x2="21" y2="14.5" />
+    </svg>
+  )
+}
+
+export function IconFileText({ size = 14, className }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" className={className} {...base}>
+      <path d="M7 3h6.5L19 8.5V20a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z" />
+      <polyline points="13.5 3 13.5 8.5 19 8.5" />
+      <line x1="9" y1="13" x2="15" y2="13" />
+      <line x1="9" y1="16.5" x2="15" y2="16.5" />
+    </svg>
+  )
+}

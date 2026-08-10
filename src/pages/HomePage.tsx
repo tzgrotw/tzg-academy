@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom'
 import { Page } from '../components/Shell'
 import { CourseCard } from '../components/CourseCard'
+import { IconPhone, IconBookmark, IconCrown } from '../components/icons'
 import { useCatalog } from '../hooks/useCatalog'
 import { useAuth } from '../hooks/useAuth'
 import heroImg from '../assets/hero.jpg'
@@ -56,9 +57,9 @@ export function HomePage() {
         <p className="eyebrow">WHY US</p>
         <h2 className="serif">在這裡上課的樣子</h2>
         <div className="feat">
-          <div><div className="ico">📱</div><h3>孩子睡了再上課也行</h3><p>手機一次點擊進全螢幕、轉橫向不中斷——通勤、午休、哄睡之後，都是妳的上課時間。</p></div>
-          <div><div className="ico">🔖</div><h3>看到哪，記到哪</h3><p>每支影片自動記進度，下次打開從上次的地方接著播，永遠知道下一步該看哪支。</p></div>
-          <div><div className="ico">👑</div><h3>學姊帶妳一起走</h3><p>章節里程碑一路點亮、修畢發證書；走過同一條路的學姊們，就在社群裡等妳。</p></div>
+          <div><div className="ico"><IconPhone /></div><h3>孩子睡了再上課也行</h3><p>手機一次點擊進全螢幕、轉橫向不中斷——通勤、午休、哄睡之後，都是妳的上課時間。</p></div>
+          <div><div className="ico"><IconBookmark /></div><h3>看到哪，記到哪</h3><p>每支影片自動記進度，下次打開從上次的地方接著播，永遠知道下一步該看哪支。</p></div>
+          <div><div className="ico"><IconCrown /></div><h3>學姊帶妳一起走</h3><p>章節里程碑一路點亮、修畢發證書；走過同一條路的學姊們，就在社群裡等妳。</p></div>
         </div>
       </div>
 

@@ -8,6 +8,7 @@ import { useAuth } from '../hooks/useAuth'
 import { supabase } from '../lib/supabase'
 import { canAccess } from '../lib/tier'
 import { isDone, playable } from '../lib/progress'
+import { IconCheck, IconLightbulb, IconLock } from '../components/icons'
 import type { Section } from '../lib/types'
 
 // 上課頁——章節橫幅＋小節內文＋影片列＋筆記＋上一章/下一章。
@@ -89,7 +90,7 @@ export function LearnPage() {
   if (!canAccess(course.audience, profile?.tier ?? null)) {
     return (
       <Page><div className="wrap"><div className="locknote">
-        <h3>🔒 這一章是{course.audience === 'agent' ? '代理專屬' : '會員'}內容</h3>
+        <h3 className="i"><IconLock size={17} />這一章是{course.audience === 'agent' ? '代理專屬' : '會員'}內容</h3>
         <p>{userId ? '聯繫學院開通身分，整套課程一次打開。' : '免費註冊就能開始上公開課；進階課入會解鎖。'}</p>
         <p style={{ marginTop: 16 }}>
           {!userId && <Link className="btn btn-m" to="/register">免費註冊</Link>}
@@ -113,7 +114,9 @@ export function LearnPage() {
             return (
               <Link key={c.key} to={`/learn/${c.key}`} className={c.key === chapterKey ? 'on' : ''}>
                 <b>第 {c.no} 章</b>・{c.title}
-                <small>{rows.length === 0 ? '—' : d === rows.length ? '✓ 全部看完' : `${d}/${rows.length} 支看完`}</small>
+                <small className={d === rows.length && rows.length > 0 ? 'i' : ''}>
+                  {rows.length === 0 ? '—' : d === rows.length ? <><IconCheck size={11} />全部看完</> : `${d}/${rows.length} 支看完`}
+                </small>
               </Link>
             )
           })}
@@ -142,7 +145,7 @@ export function LearnPage() {
               {s.items.length > 0 && (
                 <div className="pts">{s.items.map((it, i) => <div key={i}><i />{it}</div>)}</div>
               )}
-              {s.note && <div className="notebox">💡 {s.note}</div>}
+              {s.note && <div className="notebox i"><IconLightbulb size={15} />{s.note}</div>}
             </div>
           ))}
 

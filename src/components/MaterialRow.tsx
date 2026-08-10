@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { isDone } from '../lib/progress'
+import { IconCheck, IconFileText } from './icons'
 import type { Material, Progress } from '../lib/types'
 
 /** 每隔幾秒寫一次進度——太密一直打資料庫，太疏關掉分頁掉太多 */
@@ -90,14 +91,14 @@ export function VideoRow({ video, progress, onProgress }: {
   return (
     <>
       <button className="vrow" onClick={() => void open()} disabled={busy}>
-        <span className={`ic ${done ? 'done' : 'play'}`}>{done ? '✓' : ''}</span>
+        <span className={`ic ${done ? 'done' : 'play'}`}>{done && <IconCheck size={16} />}</span>
         <span style={{ minWidth: 0, flex: 1 }}>
           <b>{video.label}</b>
           <span className="sub">
             {done ? '看完了——點了可以重看' : pct > 0 ? `看到 ${pct}%・點了從上次的地方繼續` : (mins ?? '點了開始播')}
           </span>
         </span>
-        <span className="pct">{done ? '✓ 看完' : pct > 0 ? `${pct}%` : (mins ?? '')}</span>
+        <span className={`pct${done ? ' i' : ''}`}>{done ? <><IconCheck size={11} />看完</> : pct > 0 ? `${pct}%` : (mins ?? '')}</span>
       </button>
       {err && <p className="formerr">{err}</p>}
     </>
@@ -120,7 +121,7 @@ export function DocRow({ doc }: { doc: Material }) {
   }
   return (
     <button className="vrow" onClick={() => void open()} disabled={busy}>
-      <span className="ic">📄</span>
+      <span className="ic"><IconFileText size={16} /></span>
       <span style={{ minWidth: 0, flex: 1 }}>
         <b>{doc.label}</b>
         <span className="sub">{err ? '開不起來，再按一次' : '講義・點了開新分頁看'}</span>

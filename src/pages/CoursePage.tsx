@@ -5,6 +5,7 @@ import { useProgress } from '../hooks/useProgress'
 import { useAuth } from '../hooks/useAuth'
 import { canAccess, AUDIENCE_LABEL, lockHint } from '../lib/tier'
 import { countProgress, isDone, nextToWatch, playable } from '../lib/progress'
+import { IconAward, IconCheck, IconLock } from '../components/icons'
 
 // 課程介紹頁——封面 hero＋唯一下一步 CTA＋章節大綱＋里程碑。
 // 不登入也看得到這一頁（招生用）；內容（教材列）由 RLS 決定撈不撈得到。
@@ -71,7 +72,7 @@ export function CoursePage() {
               )}
               {open && !resume && vids.total > 0 && (
                 <span className="btn" style={{ background: 'linear-gradient(135deg,#C5B382,#937C44)', color: '#1B1607' }}>
-                  🏅 這門課修畢了——{endReward?.title ?? '證書'}屬於妳
+                  <IconAward size={15} /> 這門課修畢了——{endReward?.title ?? '證書'}屬於妳
                 </span>
               )}
               {open && vids.total === 0 && chapters.length === 0 && (
@@ -103,12 +104,12 @@ export function CoursePage() {
               <>
                 <span className="no">{ch.no}</span>
                 <span className="t">
-                  <b>{open ? ch.title : `🔒 ${ch.title}`}{isNow && ' ← 上到這'}</b>
+                  <b>{open ? ch.title : <span className="i"><IconLock size={13} />{ch.title}</span>}{isNow && ' ← 上到這'}</b>
                   {ch.tagline && <span className="sub">{ch.tagline}</span>}
                 </span>
                 <span className="r">
                   {open && rows.length > 0 && (complete
-                    ? <span className="ok">✓ 看完</span>
+                    ? <span className="ok i"><IconCheck size={12} />看完</span>
                     : <span>{doneCnt}/{rows.length} 支</span>)}
                 </span>
               </>
@@ -120,7 +121,7 @@ export function CoursePage() {
                   : <span className="row locked">{rowInner}</span>}
                 {milestone && (
                   <span className={`row milestone${open && chapterDone(ch.key) ? '' : ' locked'}`}>
-                    <span className="no">🏅</span>
+                    <span className="no"><IconAward size={15} /></span>
                     <span className="t">
                       <b style={{ color: 'var(--gold-deep)' }}>{milestone.title}</b>
                       <span className="sub">{open && chapterDone(ch.key) ? (milestone.message || '達成了！') : `完成第 ${ch.no} 章解鎖`}</span>
