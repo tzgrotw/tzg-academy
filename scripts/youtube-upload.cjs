@@ -23,6 +23,7 @@ const SCOPES = [
 ];
 const TOKEN_PATH = path.join(__dirname, '../.oauth-token.json');
 const CREDENTIALS_PATH = path.join(__dirname, '../.google-credentials.json');
+const MANIFEST_PATH = path.join(__dirname, '../.upload-manifest.json');
 const REDIRECT_PORT = 3000;
 const REDIRECT_URI = `http://localhost:${REDIRECT_PORT}/oauth2callback`;
 
@@ -133,19 +134,26 @@ async function listVideosFromDrive(auth) {
       );
 
       let currentChapter = null;
+      const looseFiles = []; // 课程夹里没被任何章节子资料夹包住的档案（例如档案直接放课程夹底下）
       for (const item of chapterItems) {
         if (item.mimeType === 'application/vnd.google-apps.folder') {
           currentChapter = { name: item.name, id: item.id, videos: [] };
           course.chapters.push(currentChapter);
-        } else if (currentChapter) {
-          currentChapter.videos.push({
+        } else {
+          const file = {
             name: item.name,
             id: item.id,
             mimeType: item.mimeType,
             size: parseInt(item.size || 0, 10),
             webViewLink: item.webViewLink,
-          });
+          };
+          if (currentChapter) currentChapter.videos.push(file);
+          else looseFiles.push(file);
         }
+      }
+      // 没有章节子资料夹、档案直接放课程夹底下的情况——塞进一个虚拟章节，不要静默漏掉
+      if (looseFiles.length > 0) {
+        course.chapters.push({ name: '未分章节', id: `${courseFolder.id}-loose`, videos: looseFiles });
       }
 
       // 章节文件夹本身没有子内容时，代表影片/讲义直接放在章节夹里
@@ -220,6 +228,18 @@ async function uploadToYouTube(auth, filePath, title, description) {
   return res.data.id;
 }
 
+// ═══ 上传记录（Drive fileId → YouTube videoId）═══
+// 重跑腳本（例如補傳漏掉的課程）不會把已經傳過的影片又下載+上傳一次。
+function loadManifest() {
+  if (!fs.existsSync(MANIFEST_PATH)) return {};
+  try { return JSON.parse(fs.readFileSync(MANIFEST_PATH, 'utf8')); }
+  catch { return {}; }
+}
+
+function saveManifest(manifest) {
+  fs.writeFileSync(MANIFEST_PATH, JSON.stringify(manifest, null, 2));
+}
+
 // ═══ 保存到数据库 ═══
 async function saveToDatabase(courses, youtubeIds) {
   // TODO: 连接到 Supabase 并保存课程数据——这部分在后续步骤实现
@@ -250,13 +270,18 @@ async function main() {
     console.log();
 
     console.log('3️⃣  开始上传...\n');
-    const youtubeIds = {};
+    const manifest = loadManifest();
+    const youtubeIds = { ...manifest };
 
     for (const course of courses) {
       for (const chapter of course.chapters) {
         for (const video of chapter.videos) {
           if (video.mimeType !== 'video/mp4') {
             console.log(`  ⏭️  跳过讲义（不上传 YouTube，另外放 Supabase Storage）: ${video.name}`);
+            continue;
+          }
+          if (manifest[video.id]) {
+            console.log(`  ⏭️  已经上传过，跳过: ${video.name} (YouTube ID: ${manifest[video.id]})`);
             continue;
           }
           let filePath;
@@ -269,6 +294,8 @@ async function main() {
               `课程：${course.name}\n章节：${chapter.name}`,
             );
             youtubeIds[video.id] = youtubeId;
+            manifest[video.id] = youtubeId;
+            saveManifest(manifest); // 每传完一支就存档——中途断掉也不会丢进度
           } catch (err) {
             console.error(`  ❌ 上传失败: ${video.name}`, err.message);
           } finally {
