@@ -358,6 +358,7 @@ function ChapterCard({ chapter, handle, content, confirm }: {
             {(m, mHandle) => (
               <MaterialAdminRow material={m} handle={mHandle}
                 onToggle={() => content.toggleMaterial(m)}
+                onRename={label => content.updateMaterial(m.id, { label })}
                 onDelete={() => void deleteMaterial(m)} />
             )}
           </SortableList>
@@ -621,30 +622,45 @@ function SectionEditor({ section, handle, onDelete }: { section: Section; handle
   )
 }
 
-function MaterialAdminRow({ material, handle, onToggle, onDelete }: {
+function MaterialAdminRow({ material, handle, onToggle, onRename, onDelete }: {
   material: Material
   handle: DragHandleProps
   onToggle: () => Promise<string | null>
+  onRename: (label: string) => Promise<string | null>
   onDelete: () => void
 }) {
+  const [label, setLabel] = useState(material.label)
   const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+  const dirty = label.trim() !== '' && label.trim() !== material.label
+
   async function toggle() {
     setBusy(true)
     await onToggle()
     setBusy(false)
   }
+
+  async function rename() {
+    setBusy(true); setErr(null)
+    setErr(await onRename(label.trim()))
+    setBusy(false)
+  }
+
   return (
-    <div className="mat-row">
+    <div className="mat-row" style={{ flexWrap: 'wrap' }}>
       <DragHandle {...handle} />
-      <div className="grow i" style={{ fontSize: 13 }}>
+      <span style={{ flex: 'none', color: 'var(--tx-muted)' }}>
         {material.kind === 'video' ? <IconFilm size={14} /> : <IconFileText size={14} />}
-        <b>{material.label}</b>
-        {!material.is_active && <span className="sub">已停用——學員看不到</span>}
-      </div>
+      </span>
+      <input value={label} onChange={e => setLabel(e.target.value)} placeholder="教材名稱"
+        style={{ flex: 1, minWidth: 140, border: '1px solid rgba(197,179,130,.4)', borderRadius: 8, padding: '6px 10px', font: 'inherit', fontSize: 13, background: '#FFFDF7' }} />
+      {dirty && <button className="btn btn-s" disabled={busy} onClick={() => void rename()}>存</button>}
+      {!material.is_active && <span className="sub" style={{ flex: 'none' }}>已停用——學員看不到</span>}
       <button className="btn-line" disabled={busy} onClick={() => void toggle()}>
         {material.is_active ? '停用' : '啟用'}
       </button>
       <button className="icon-btn danger" disabled={busy} title="刪除教材" onClick={onDelete}><IconTrash size={14} /></button>
+      {err && <p className="formerr" style={{ width: '100%', margin: 0 }}>{err}</p>}
     </div>
   )
 }
