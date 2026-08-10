@@ -1,6 +1,7 @@
 import { useCallback } from 'react'
 import { useCatalog } from './useCatalog'
 import { supabase } from '../lib/supabase'
+import { extractYoutubeId } from '../lib/youtube'
 import type { Chapter, Course, Material } from '../lib/types'
 
 const newChapterKey = () => `ch${Date.now().toString(36)}`
@@ -74,6 +75,20 @@ export function useAdminContent() {
     return null
   }, [cat])
 
+  const addYoutubeMaterial = useCallback(async (
+    chapterKey: string, urlOrId: string, label: string, afterSortNo: number,
+  ) => {
+    const youtubeId = extractYoutubeId(urlOrId)
+    if (!youtubeId) return '看不出來是哪支 YouTube 影片——貼完整網址或 11 碼的影片 ID'
+    const { data, error } = await supabase.from('course_videos').insert({
+      chapter_key: chapterKey, label: label.trim() || '未命名影片', kind: 'video',
+      youtube_id: youtubeId, sort_no: afterSortNo + 10,
+    }).select().single()
+    if (error) return error.message
+    cat.addMaterialLocal(data as Material)
+    return null
+  }, [cat])
+
   const toggleMaterial = useCallback(async (material: Material) => {
     const nextActive = !material.is_active
     const { error } = await supabase.from('course_videos').update({ is_active: nextActive }).eq('id', material.id)
@@ -86,6 +101,6 @@ export function useAdminContent() {
     ...cat,
     createCourse, updateCourse, uploadCourseCover,
     addChapter, updateChapter, uploadChapterCover,
-    uploadMaterial, toggleMaterial,
+    uploadMaterial, addYoutubeMaterial, toggleMaterial,
   }
 }

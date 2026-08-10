@@ -20,7 +20,7 @@ export function HomePage() {
         <div className="veil" />
         <div className="wrap in">
           <p className="eyebrow">泰 熙 爾 札 娜 ・ 學 院</p>
-          <h1 className="serif">女性創業，<br />更愛自己</h1>
+          <h1 className="serif">女性創業<br />更愛自己</h1>
           <p className="sub">創業、自我成長、理財、自媒體、直播、珠寶——給想要獨立的妳，一間隨時開門的線上學院。手機就能上課，看到哪成長到那。</p>
           <div className="cta">
             <Link className="btn btn-m" to={userId ? '/courses' : '/register'}>免費開始上課</Link>

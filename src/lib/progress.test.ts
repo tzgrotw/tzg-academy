@@ -7,6 +7,7 @@ function material(overrides: Partial<Material> & { id: number; chapter_key: stri
     label: `video-${overrides.id}`,
     kind: 'video',
     storage_path: 'some/path.mp4',
+    youtube_id: null,
     duration_sec: 300,
     sort_no: overrides.id,
     is_active: true,

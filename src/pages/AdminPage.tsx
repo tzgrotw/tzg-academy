@@ -216,6 +216,16 @@ function ChapterEditor({ chapter, materials, content }: {
     setBusy(false)
   }
 
+  const [ytUrl, setYtUrl] = useState('')
+  const [ytLabel, setYtLabel] = useState('')
+  async function addYoutube() {
+    setBusy(true); setErr(null)
+    const e = await content.addYoutubeMaterial(chapter.key, ytUrl, ytLabel, materials.at(-1)?.sort_no ?? 0)
+    setErr(e)
+    if (!e) { setYtUrl(''); setYtLabel('') }
+    setBusy(false)
+  }
+
   async function addSection() {
     const { data, error } = await supabase.from('course_sections').insert({
       chapter_key: chapter.key, heading: '新小節',
@@ -267,6 +277,11 @@ function ChapterEditor({ chapter, materials, content }: {
               <input type="file" accept=".pdf,.doc,.docx,.ppt,.pptx" style={{ display: 'none' }} disabled={busy}
                 onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void uploadMaterial(f, 'doc') }} />
             </label>
+          </div>
+          <div className="inline-form" style={{ marginTop: 10 }}>
+            <input value={ytUrl} onChange={e => setYtUrl(e.target.value)} placeholder="貼 YouTube 網址或影片 ID" style={{ minWidth: 220 }} />
+            <input value={ytLabel} onChange={e => setYtLabel(e.target.value)} placeholder="這支影片的標題" style={{ flex: 1, minWidth: 180 }} />
+            <button className="btn-line" disabled={busy || !ytUrl.trim()} onClick={() => void addYoutube()}>＋加 YouTube 影片</button>
           </div>
           {err && <p className="formerr">{err}</p>}
         </div>
