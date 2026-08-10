@@ -218,6 +218,35 @@ textarea.note-ta:focus { outline: 2px solid var(--gold); }
 .tierchip.member { background: var(--gold-pale); color: var(--gold-deep); }
 .tierchip.agent { background: #FBE3F0; color: var(--magenta); }
 .tierchip.admin { background: var(--ink); color: #E8DDB8; }
+.btn-danger { background: #B3261E; color: #fff; padding: 8px 16px; font-size: 13px; border-radius: 10px; }
+.btn-danger:hover { background: #8C1D17; }
+.icon-btn { border: none; background: none; cursor: pointer; color: var(--tx-muted); display: grid; place-items: center; padding: 6px; border-radius: 8px; }
+.icon-btn:hover { background: var(--gold-pale); color: var(--tx); }
+.icon-btn.danger:hover { background: #FDF0F3; color: #B3261E; }
+.drag-handle { cursor: grab; color: var(--tx-muted); display: grid; place-items: center; padding: 4px; touch-action: none; }
+.drag-handle:hover { color: var(--tx-soft); }
+.drag-handle:active { cursor: grabbing; }
+
+/* 確認視窗——取代瀏覽器內建 confirm() */
+.confirm-veil { position: fixed; inset: 0; background: rgba(23,19,7,.55); display: grid; place-items: center; z-index: 100; padding: 20px; }
+.confirm-box { background: var(--card); border-radius: 18px; box-shadow: var(--shadow-lg); padding: 24px; max-width: 360px; width: 100%; }
+.confirm-box p { font-size: 14.5px; line-height: 1.7; }
+.confirm-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+
+/* 後台課程／章節列表——主列表 → 選一門課進去看詳細，手機自然收成單欄 drill-down */
+.curr-row { display: flex; align-items: center; gap: 10px; padding: 14px 4px; border-bottom: 1px solid rgba(197,179,130,.22); background: var(--card); }
+.curr-row:last-child { border-bottom: none; }
+.curr-row .grow { flex: 1; min-width: 0; cursor: pointer; }
+.curr-back { display: inline-flex; align-items: center; gap: 6px; color: var(--tx-muted); font-size: 13px; text-decoration: none; background: none; border: none; cursor: pointer; padding: 0; margin-bottom: 14px; }
+.curr-back:hover { color: var(--magenta); }
+.curr-section { margin-top: 22px; }
+.curr-section-hd { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.curr-section-hd h4 { font-size: 13.5px; font-weight: 800; color: var(--tx-soft); letter-spacing: .05em; }
+.chapter-card { background: #FBF8F1; border: 1px solid rgba(197,179,130,.3); border-radius: 14px; margin-top: 10px; overflow: hidden; }
+.chapter-hd { display: flex; align-items: center; gap: 10px; padding: 12px 14px; }
+.chapter-hd .grow { flex: 1; min-width: 0; cursor: pointer; }
+.chapter-body { padding: 0 14px 14px; }
+.mat-row { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-top: 1px solid rgba(197,179,130,.22); }
 .searchbar { display: flex; gap: 10px; margin-top: 16px; }
 .searchbar input { flex: 1; border: 1px solid rgba(197,179,130,.55); border-radius: 12px; padding: 11px 14px; font: inherit; font-size: 14px; background: #FFFDF7; }
 .inline-form { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 12px; }

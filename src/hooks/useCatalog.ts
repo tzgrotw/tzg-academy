@@ -58,8 +58,24 @@ export function useCatalog() {
   const addChapterLocal = useCallback((c: Chapter) => setChapters(chs => [...chs, c]), [])
   const addMaterialLocal = useCallback((m: Material) => setMaterials(ms => [...ms, m]), [])
 
+  // 刪除有 FK cascade（章節掛在課程下、教材掛在章節下）——本地也照著砍，
+  // 不用整包重撈；材料本身沒有下層，直接濾掉那一筆就好。
+  const removeMaterialLocal = useCallback((id: number) =>
+    setMaterials(ms => ms.filter(m => m.id !== id)), [])
+  const removeChapterLocal = useCallback((key: string) => {
+    setChapters(chs => chs.filter(c => c.key !== key))
+    setMaterials(ms => ms.filter(m => m.chapter_key !== key))
+  }, [])
+  const removeCourseLocal = useCallback((id: number) => {
+    const droppedKeys = new Set(chapters.filter(c => c.course_id === id).map(c => c.key))
+    setChapters(chs => chs.filter(c => c.course_id !== id))
+    setMaterials(ms => ms.filter(m => !droppedKeys.has(m.chapter_key)))
+    setCourses(cs => cs.filter(c => c.id !== id))
+  }, [chapters])
+
   return {
     courses, chapters, materials, rewards, loaded, reload: load, chaptersOf, courseStats,
     patchCourse, patchChapter, patchMaterial, addCourseLocal, addChapterLocal, addMaterialLocal,
+    removeCourseLocal, removeChapterLocal, removeMaterialLocal,
   }
 }

@@ -6,11 +6,13 @@ import { useAdminMembers } from '../hooks/useAdminMembers'
 import { useAdminContent } from '../hooks/useAdminContent'
 import { supabase } from '../lib/supabase'
 import { AUDIENCE_LABEL, TIER_LABEL } from '../lib/tier'
-import { IconCheck, IconFileText, IconFilm } from '../components/icons'
+import { IconCheck, IconChevron, IconFileText, IconFilm, IconTrash } from '../components/icons'
+import { ConfirmProvider, useConfirm } from '../components/ConfirmDialog'
+import { commitOrder, DragHandle, SortableList, type DragHandleProps } from '../components/Sortable'
 import type { Audience, Chapter, Course, Material, Section, Tier } from '../lib/types'
 
-// 後台——兩個分頁：會員（搜尋＋一鍵改身分）、課程（課→章→節/教材，逐層展開）。
-// 精簡版原則：一列一件事、存了馬上生效、錯了講清楚哪裡錯。
+// 後台——兩個分頁：會員（搜尋＋一鍵改身分）、課程（課程列表 → 點進去看該課的章節/教材）。
+// 課程結構跟課程設定分開兩塊；排序用拖曳（SortableList）；刪除都走 ConfirmDialog，不用瀏覽器內建 confirm()。
 // 資料存取都在 hooks/useAdminMembers、hooks/useAdminContent；這裡只管畫面。
 
 export function AdminPage() {
@@ -21,18 +23,20 @@ export function AdminPage() {
   if (profile?.tier !== 'admin') return <Navigate to="/" replace />
 
   return (
-    <Page>
-      <div className="wrap" style={{ paddingBottom: 90 }}>
-        <div className="admin-hd">
-          <h1 className="serif">學院後台</h1>
-          <div className="admin-tabs">
-            <button className={tab === 'members' ? 'on' : ''} onClick={() => setTab('members')}>會員</button>
-            <button className={tab === 'content' ? 'on' : ''} onClick={() => setTab('content')}>課程</button>
+    <ConfirmProvider>
+      <Page>
+        <div className="wrap" style={{ paddingBottom: 90 }}>
+          <div className="admin-hd">
+            <h1 className="serif">學院後台</h1>
+            <div className="admin-tabs">
+              <button className={tab === 'members' ? 'on' : ''} onClick={() => setTab('members')}>會員</button>
+              <button className={tab === 'content' ? 'on' : ''} onClick={() => setTab('content')}>課程</button>
+            </div>
           </div>
+          {tab === 'members' ? <MembersTab /> : <ContentTab />}
         </div>
-        {tab === 'members' ? <MembersTab /> : <ContentTab />}
-      </div>
-    </Page>
+      </Page>
+    </ConfirmProvider>
   )
 }
 
@@ -66,17 +70,37 @@ function MembersTab() {
   )
 }
 
-/* ───────────────────────── 課程 ───────────────────────── */
+/* ───────────────────────── 課程：課程列表 → 課程詳細 ───────────────────────── */
 
 type AdminContent = ReturnType<typeof useAdminContent>
+type Confirm = ReturnType<typeof useConfirm>
 
 function ContentTab() {
   const content = useAdminContent()
-  const [openCourse, setOpenCourse] = useState<number | null>(null)
+  const confirm = useConfirm()
+  const [selectedId, setSelectedId] = useState<number | null>(null)
   const [msg, setMsg] = useState<string | null>(null)
+
+  const sortedCourses = [...content.courses].sort((a, b) => a.sort_no - b.sort_no || a.id - b.id)
+  const selected = sortedCourses.find(c => c.id === selectedId) ?? null
 
   async function createCourse() {
     setMsg(await content.createCourse())
+  }
+
+  async function deleteCourse(course: Course) {
+    const ok = await confirm(`確定要刪除「${course.title}」？裡面的章節、教材會一起砍掉，不能復原。`, { danger: true })
+    if (!ok) return
+    setMsg(await content.deleteCourse(course.id))
+  }
+
+  function reorderCourses(newOrder: Course[]) {
+    commitOrder(newOrder, (c, sortNo) => void content.updateCourse(c.id, { sort_no: sortNo }))
+  }
+
+  if (selected) {
+    return <CourseDetail key={selected.id} course={selected} content={content} confirm={confirm}
+      onBack={() => setSelectedId(null)} />
   }
 
   return (
@@ -88,26 +112,34 @@ function ContentTab() {
           <button className="btn btn-s" onClick={() => void createCourse()}>＋開新課程</button>
         </div>
         {!content.loaded && <div className="skel" />}
-        {content.courses.map(c => (
-          <CourseEditor key={c.id} course={c}
-            chapters={content.chapters.filter(ch => ch.course_id === c.id).sort((a, b) => a.sort_no - b.sort_no)}
-            materials={content.materials}
-            open={openCourse === c.id}
-            onToggle={() => setOpenCourse(openCourse === c.id ? null : c.id)}
-            content={content} />
-        ))}
+        {content.loaded && sortedCourses.length === 0 && (
+          <p className="muted" style={{ marginTop: 16, fontSize: 13 }}>還沒有課程，點右上角開一門。</p>
+        )}
+        <SortableList items={sortedCourses} getId={c => String(c.id)} onReorder={reorderCourses}>
+          {(c, handle) => (
+            <div className="curr-row">
+              <DragHandle {...handle} />
+              <div className="grow" onClick={() => setSelectedId(c.id)}>
+                <b>{c.title}</b>
+                <span className="sub">
+                  {AUDIENCE_LABEL[c.audience]}・{content.chapters.filter(ch => ch.course_id === c.id).length} 章{c.is_active ? '' : '・已下架'}
+                </span>
+              </div>
+              <button className="icon-btn danger" title="刪除課程" onClick={() => void deleteCourse(c)}><IconTrash size={16} /></button>
+              <span onClick={() => setSelectedId(c.id)} style={{ cursor: 'pointer', color: 'var(--tx-muted)' }}><IconChevron size={16} /></span>
+            </div>
+          )}
+        </SortableList>
       </div>
     </>
   )
 }
 
-function CourseEditor({ course, chapters, materials, open, onToggle, content }: {
+function CourseDetail({ course, content, confirm, onBack }: {
   course: Course
-  chapters: Chapter[]
-  materials: Material[]
-  open: boolean
-  onToggle: () => void
   content: AdminContent
+  confirm: Confirm
+  onBack: () => void
 }) {
   const [title, setTitle] = useState(course.title)
   const [tagline, setTagline] = useState(course.tagline)
@@ -127,61 +159,63 @@ function CourseEditor({ course, chapters, materials, open, onToggle, content }: 
     setBusy(false)
   }
 
+  const chapters = content.chapters.filter(ch => ch.course_id === course.id).sort((a, b) => a.sort_no - b.sort_no)
+
   async function addChapter() {
-    setErr(null)
     setErr(await content.addChapter(course.id, chapters.at(-1)?.sort_no ?? 0))
   }
 
+  function reorderChapters(newOrder: Chapter[]) {
+    commitOrder(newOrder, (c, sortNo) => void content.updateChapter(c.key, { sort_no: sortNo }))
+  }
+
   return (
-    <div style={{ borderTop: '1px solid rgba(197,179,130,.25)', marginTop: 14, paddingTop: 14 }}>
-      <div className="arow" style={{ borderBottom: 'none', cursor: 'pointer' }} onClick={onToggle}>
-        <div className="grow">
-          <b>{course.title}</b>
-          <span className="sub">{AUDIENCE_LABEL[course.audience]}・{chapters.length} 章{course.is_active ? '' : '・已下架'}</span>
+    <div className="acard">
+      <button className="curr-back" onClick={onBack}>
+        <span style={{ transform: 'rotate(180deg)', display: 'inline-flex' }}><IconChevron size={14} /></span>回課程列表
+      </button>
+
+      <div className="curr-section">
+        <div className="curr-section-hd"><h4>課程設定</h4></div>
+        <div className="inline-form" style={{ marginTop: 0 }}>
+          <input value={title} onChange={e => setTitle(e.target.value)} style={{ minWidth: 220 }} placeholder="課名" />
+          <input value={tagline} onChange={e => setTagline(e.target.value)} style={{ flex: 1, minWidth: 220 }} placeholder="一句話介紹" />
+          <select value={audience} onChange={e => setAudience(e.target.value as Audience)}>
+            <option value="public">公開・免費</option>
+            <option value="member">會員課程</option>
+            <option value="agent">代理專屬</option>
+          </select>
+          <button className="btn btn-s" disabled={busy} onClick={() => void save({ title, tagline, audience })}>存</button>
+          <label className="btn-line" style={{ cursor: 'pointer' }}>
+            {course.cover_url ? '換封面' : '＋放封面（橫圖）'}
+            <input type="file" accept="image/*" style={{ display: 'none' }}
+              onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void uploadCover(f) }} />
+          </label>
+          <button className="btn-line" disabled={busy} onClick={() => void save({ is_active: !course.is_active })}>
+            {course.is_active ? '下架' : '重新上架'}
+          </button>
         </div>
-        <span className="muted">{open ? '收合 ▲' : '編輯 ▼'}</span>
+        {err && <p className="formerr">{err}</p>}
       </div>
 
-      {open && (
-        <div style={{ paddingLeft: 6 }}>
-          <div className="inline-form">
-            <input value={title} onChange={e => setTitle(e.target.value)} style={{ minWidth: 220 }} placeholder="課名" />
-            <input value={tagline} onChange={e => setTagline(e.target.value)} style={{ flex: 1, minWidth: 220 }} placeholder="一句話介紹" />
-            <select value={audience} onChange={e => setAudience(e.target.value as Audience)}>
-              <option value="public">公開・免費</option>
-              <option value="member">會員課程</option>
-              <option value="agent">代理專屬</option>
-            </select>
-            <button className="btn btn-s" disabled={busy} onClick={() => void save({ title, tagline, audience })}>存</button>
-            <label className="btn-line" style={{ cursor: 'pointer' }}>
-              {course.cover_url ? '換封面' : '＋放封面（橫圖）'}
-              <input type="file" accept="image/*" style={{ display: 'none' }}
-                onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void uploadCover(f) }} />
-            </label>
-            <button className="btn-line" disabled={busy} onClick={() => void save({ is_active: !course.is_active })}>
-              {course.is_active ? '下架' : '重新上架'}
-            </button>
-          </div>
-          {err && <p className="formerr">{err}</p>}
-
-          {chapters.map(ch => (
-            <ChapterEditor key={ch.key} chapter={ch}
-              materials={materials.filter(m => m.chapter_key === ch.key).sort((a, b) => a.sort_no - b.sort_no)}
-              content={content} />
-          ))}
-          <p style={{ marginTop: 12 }}>
-            <button className="btn-line" onClick={() => void addChapter()}>＋加一章</button>
-          </p>
-        </div>
-      )}
+      <div className="curr-section">
+        <div className="curr-section-hd"><h4>章節（{chapters.length}）</h4></div>
+        <SortableList items={chapters} getId={c => c.key} onReorder={reorderChapters}>
+          {(ch, handle) => <ChapterCard chapter={ch} handle={handle} content={content} confirm={confirm} />}
+        </SortableList>
+        <p style={{ marginTop: 12 }}>
+          <button className="btn-line" onClick={() => void addChapter()}>＋加一章</button>
+        </p>
+      </div>
     </div>
   )
 }
 
-function ChapterEditor({ chapter, materials, content }: {
+function ChapterCard({ chapter, handle, content, confirm }: {
   chapter: Chapter
-  materials: Material[]
+  handle: DragHandleProps
   content: AdminContent
+  confirm: Confirm
 }) {
   const [open, setOpen] = useState(false)
   const [title, setTitle] = useState(chapter.title)
@@ -197,6 +231,8 @@ function ChapterEditor({ chapter, materials, content }: {
       .then(({ data }) => { if (alive) setSections((data as Section[] | null) ?? []) })
     return () => { alive = false }
   }, [open, chapter.key])
+
+  const materials = content.materials.filter(m => m.chapter_key === chapter.key).sort((a, b) => a.sort_no - b.sort_no)
 
   async function save(patch: Partial<Chapter>) {
     setBusy(true); setErr(null)
@@ -235,17 +271,35 @@ function ChapterEditor({ chapter, materials, content }: {
     setSections(ss => [...ss, data as Section])
   }
 
+  function reorderMaterials(newOrder: Material[]) {
+    commitOrder(newOrder, (m, sortNo) => void content.updateMaterial(m.id, { sort_no: sortNo }))
+  }
+
+  async function deleteChapter() {
+    const ok = await confirm(`確定要刪除「${chapter.title}」這一章？裡面的教材會一起砍掉，不能復原。`, { danger: true })
+    if (!ok) return
+    setErr(await content.deleteChapter(chapter.key))
+  }
+
+  async function deleteMaterial(m: Material) {
+    const ok = await confirm(`確定要刪除「${m.label}」？不能復原。`, { danger: true })
+    if (!ok) return
+    setErr(await content.deleteMaterial(m.id))
+  }
+
   return (
-    <div style={{ marginTop: 10, marginLeft: 10, paddingLeft: 14, borderLeft: '2px solid rgba(197,179,130,.4)' }}>
-      <div className="arow" style={{ borderBottom: 'none', cursor: 'pointer' }} onClick={() => setOpen(!open)}>
-        <div className="grow">
+    <div className="chapter-card">
+      <div className="chapter-hd">
+        <DragHandle {...handle} />
+        <div className="grow" onClick={() => setOpen(o => !o)}>
           <b style={{ fontSize: 13.5 }}>{chapter.title}</b>
           <span className="sub">{materials.length} 份教材{chapter.is_active ? '' : '・已停用'}</span>
         </div>
-        <span className="muted" style={{ fontSize: 12 }}>{open ? '收合 ▲' : '展開 ▼'}</span>
+        <button className="icon-btn danger" title="刪除章節" onClick={() => void deleteChapter()}><IconTrash size={15} /></button>
+        <span onClick={() => setOpen(o => !o)} style={{ cursor: 'pointer', color: 'var(--tx-muted)' }}><IconChevron size={15} open={open} /></span>
       </div>
       {open && (
-        <div>
+        <div className="chapter-body">
           <div className="inline-form">
             <input value={title} onChange={e => setTitle(e.target.value)} placeholder="章名" />
             <input value={tagline} onChange={e => setTagline(e.target.value)} placeholder="一句話副標" style={{ flex: 1, minWidth: 180 }} />
@@ -261,9 +315,14 @@ function ChapterEditor({ chapter, materials, content }: {
           </div>
 
           {sections.map(s => <SectionEditor key={s.id} section={s} />)}
-          {materials.map(m => (
-            <MaterialAdminRow key={m.id} material={m} onToggle={() => content.toggleMaterial(m)} />
-          ))}
+
+          <SortableList items={materials} getId={m => String(m.id)} onReorder={reorderMaterials}>
+            {(m, mHandle) => (
+              <MaterialAdminRow material={m} handle={mHandle}
+                onToggle={() => content.toggleMaterial(m)}
+                onDelete={() => void deleteMaterial(m)} />
+            )}
+          </SortableList>
 
           <div className="inline-form" style={{ marginTop: 10 }}>
             <button className="btn-line" onClick={() => void addSection()}>＋加小節內文</button>
@@ -320,7 +379,12 @@ function SectionEditor({ section }: { section: Section }) {
   )
 }
 
-function MaterialAdminRow({ material, onToggle }: { material: Material; onToggle: () => Promise<string | null> }) {
+function MaterialAdminRow({ material, handle, onToggle, onDelete }: {
+  material: Material
+  handle: DragHandleProps
+  onToggle: () => Promise<string | null>
+  onDelete: () => void
+}) {
   const [busy, setBusy] = useState(false)
   async function toggle() {
     setBusy(true)
@@ -328,14 +392,17 @@ function MaterialAdminRow({ material, onToggle }: { material: Material; onToggle
     setBusy(false)
   }
   return (
-    <div className="arow">
-      <div className="grow">
-        <b className="i" style={{ fontSize: 13 }}>{material.kind === 'video' ? <IconFilm size={14} /> : <IconFileText size={14} />}{material.label}</b>
+    <div className="mat-row">
+      <DragHandle {...handle} />
+      <div className="grow i" style={{ fontSize: 13 }}>
+        {material.kind === 'video' ? <IconFilm size={14} /> : <IconFileText size={14} />}
+        <b>{material.label}</b>
         {!material.is_active && <span className="sub">已停用——學員看不到</span>}
       </div>
       <button className="btn-line" disabled={busy} onClick={() => void toggle()}>
         {material.is_active ? '停用' : '啟用'}
       </button>
+      <button className="icon-btn danger" disabled={busy} title="刪除教材" onClick={onDelete}><IconTrash size={14} /></button>
     </div>
   )
 }

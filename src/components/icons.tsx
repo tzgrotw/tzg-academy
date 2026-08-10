@@ -79,6 +79,37 @@ export function IconFilm({ size = 14, className }: IconProps) {
   )
 }
 
+export function IconGrip({ size = 16, className }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" className={className} fill="currentColor">
+      <circle cx="9" cy="6" r="1.6" /><circle cx="15" cy="6" r="1.6" />
+      <circle cx="9" cy="12" r="1.6" /><circle cx="15" cy="12" r="1.6" />
+      <circle cx="9" cy="18" r="1.6" /><circle cx="15" cy="18" r="1.6" />
+    </svg>
+  )
+}
+
+export function IconTrash({ size = 16, className }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" className={className} {...base}>
+      <path d="M4 7h16" />
+      <path d="M9 7V4.5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1V7" />
+      <path d="M6 7l1 13a1 1 0 0 0 1 .9h8a1 1 0 0 0 1-.9l1-13" />
+      <line x1="10" y1="11" x2="10" y2="17" />
+      <line x1="14" y1="11" x2="14" y2="17" />
+    </svg>
+  )
+}
+
+export function IconChevron({ size = 16, className, open }: IconProps & { open?: boolean }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" className={className}
+      style={{ transform: open ? 'rotate(90deg)' : undefined, transition: '.2s' }} {...base}>
+      <polyline points="9 5 16 12 9 19" />
+    </svg>
+  )
+}
+
 export function IconFileText({ size = 14, className }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" className={className} {...base}>

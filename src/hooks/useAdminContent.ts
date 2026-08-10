@@ -89,18 +89,43 @@ export function useAdminContent() {
     return null
   }, [cat])
 
-  const toggleMaterial = useCallback(async (material: Material) => {
-    const nextActive = !material.is_active
-    const { error } = await supabase.from('course_videos').update({ is_active: nextActive }).eq('id', material.id)
+  const updateMaterial = useCallback(async (id: number, patch: Partial<Material>) => {
+    const { error } = await supabase.from('course_videos').update(patch).eq('id', id)
     if (error) return error.message
-    cat.patchMaterial(material.id, { is_active: nextActive })
+    cat.patchMaterial(id, patch)
+    return null
+  }, [cat])
+
+  const toggleMaterial = useCallback((material: Material) =>
+    updateMaterial(material.id, { is_active: !material.is_active }), [updateMaterial])
+
+  // 三層都有 FK cascade（課→章→教材），DB 那邊砍一筆會連下層一起清掉；
+  // 本地也對應地清（removeCourseLocal/removeChapterLocal 會一起濾掉子層）。
+  const deleteCourse = useCallback(async (id: number) => {
+    const { error } = await supabase.from('courses').delete().eq('id', id)
+    if (error) return error.message
+    cat.removeCourseLocal(id)
+    return null
+  }, [cat])
+
+  const deleteChapter = useCallback(async (key: string) => {
+    const { error } = await supabase.from('course_chapters').delete().eq('key', key)
+    if (error) return error.message
+    cat.removeChapterLocal(key)
+    return null
+  }, [cat])
+
+  const deleteMaterial = useCallback(async (id: number) => {
+    const { error } = await supabase.from('course_videos').delete().eq('id', id)
+    if (error) return error.message
+    cat.removeMaterialLocal(id)
     return null
   }, [cat])
 
   return {
     ...cat,
-    createCourse, updateCourse, uploadCourseCover,
-    addChapter, updateChapter, uploadChapterCover,
-    uploadMaterial, addYoutubeMaterial, toggleMaterial,
+    createCourse, updateCourse, uploadCourseCover, deleteCourse,
+    addChapter, updateChapter, uploadChapterCover, deleteChapter,
+    uploadMaterial, addYoutubeMaterial, updateMaterial, toggleMaterial, deleteMaterial,
   }
 }
