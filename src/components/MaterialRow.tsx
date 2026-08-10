@@ -1,8 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { isDone } from '../lib/progress'
 import { IconCheck, IconFileText } from './icons'
 import type { Material, Progress } from '../lib/types'
+
+// pdf.js 是重量級的 library——不要讓每個進站的人都先載這包，
+// 只有真的點開講義的人才要付這個流量／解析成本。
+const PdfViewer = lazy(() => import('./PdfViewer').then(m => ({ default: m.PdfViewer })))
 
 /** 每隔幾秒寫一次進度——太密一直打資料庫，太疏關掉分頁掉太多 */
 const SAVE_EVERY_SEC = 15
@@ -156,27 +160,38 @@ function StorageVideoRow({ video, progress, onProgress }: {
   )
 }
 
-/** 講義：開新分頁用瀏覽器自己的閱讀器（手機上比任何內嵌都好用），不記進度 */
+/** 講義：自己刻的 PDF 閱讀器內嵌播放，不丟去瀏覽器內建那個陽春檢視器。不記進度。 */
 export function DocRow({ doc }: { doc: Material }) {
+  const [url, setUrl] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
-  const [err, setErr] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+
   const open = async () => {
     if (!doc.storage_path) return
-    setBusy(true); setErr(false)
-    const tab = window.open('', '_blank')   // 先開分頁再換網址：await 完才 open 會被手機擋成彈窗
-    try {
-      const u = await signUrl(doc.storage_path)
-      if (tab) tab.location.href = u; else window.location.href = u
-    } catch { tab?.close(); setErr(true) }
+    setBusy(true); setErr(null)
+    try { setUrl(await signUrl(doc.storage_path)) }
+    catch (e) { setErr(e instanceof Error ? e.message : '講義載入失敗') }
     finally { setBusy(false) }
   }
+
+  if (url) {
+    return (
+      <Suspense fallback={<div className="skel" style={{ marginTop: 16 }} />}>
+        <PdfViewer url={url} label={doc.label} onClose={() => setUrl(null)} />
+      </Suspense>
+    )
+  }
+
   return (
-    <button className="vrow" onClick={() => void open()} disabled={busy}>
-      <span className="ic"><IconFileText size={16} /></span>
-      <span style={{ minWidth: 0, flex: 1 }}>
-        <b>{doc.label}</b>
-        <span className="sub">{err ? '開不起來，再按一次' : '講義・點了開新分頁看'}</span>
-      </span>
-    </button>
+    <>
+      <button className="vrow" onClick={() => void open()} disabled={busy}>
+        <span className="ic"><IconFileText size={16} /></span>
+        <span style={{ minWidth: 0, flex: 1 }}>
+          <b>{doc.label}</b>
+          <span className="sub">{busy ? '載入中…' : '講義・點了在這裡看'}</span>
+        </span>
+      </button>
+      {err && <p className="formerr">{err}</p>}
+    </>
   )
 }

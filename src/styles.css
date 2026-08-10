@@ -178,6 +178,17 @@ button { font-family: inherit; }
 .player-box video { width: 100%; border-radius: 16px; background: #000; aspect-ratio: 16/9; margin-top: 16px; }
 .player-box .yt-wrap { width: 100%; aspect-ratio: 16/9; margin-top: 16px; border-radius: 16px; overflow: hidden; background: #000; }
 .player-box .yt-wrap iframe { width: 100%; height: 100%; border: none; display: block; }
+
+/* 講義閱讀器 */
+.pdf-viewer { background: var(--card); border-radius: 16px; box-shadow: var(--shadow); margin-top: 16px; overflow: hidden; }
+.pdf-toolbar { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-bottom: 1px solid rgba(197,179,130,.25); flex-wrap: wrap; }
+.pdf-toolbar .pdf-title { font-weight: 700; font-size: 13.5px; flex: 1; min-width: 100px; }
+.pdf-controls { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--tx-muted); font-variant-numeric: tabular-nums; }
+.pdf-controls button { border: 1px solid rgba(197,179,130,.5); background: #fff; border-radius: 8px; width: 28px; height: 28px; cursor: pointer; font-size: 15px; color: var(--tx-soft); line-height: 1; }
+.pdf-controls button:disabled { opacity: .4; cursor: default; }
+.pdf-controls a { color: var(--magenta); font-weight: 700; text-decoration: none; font-size: 12.5px; margin-left: 6px; white-space: nowrap; }
+.pdf-canvas-wrap { background: #E9E4D4; padding: 20px; overflow: auto; display: flex; justify-content: center; max-height: 78vh; }
+.pdf-canvas-wrap canvas { box-shadow: 0 4px 20px rgba(23,19,7,.25); background: #fff; max-width: 100%; height: auto; }
 .pn { display: flex; gap: 14px; margin-top: 26px; }
 .pn a { flex: 1; display: flex; flex-direction: column; gap: 3px; text-decoration: none; border-radius: 14px; padding: 15px 20px; font-size: 14.5px; font-weight: 700; transition: .25s; }
 .pn small { font-size: 11px; font-weight: 400; opacity: .75; }
