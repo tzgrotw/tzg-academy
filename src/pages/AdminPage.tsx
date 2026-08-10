@@ -6,6 +6,7 @@ import { useAdminMembers } from '../hooks/useAdminMembers'
 import { useAdminContent } from '../hooks/useAdminContent'
 import { supabase } from '../lib/supabase'
 import { AUDIENCE_LABEL, TIER_LABEL } from '../lib/tier'
+import { IconCheck, IconFileText, IconFilm } from '../components/icons'
 import type { Audience, Chapter, Course, Material, Section, Tier } from '../lib/types'
 
 // 後台——兩個分頁：會員（搜尋＋一鍵改身分）、課程（課→章→節/教材，逐層展開）。
@@ -294,7 +295,7 @@ function SectionEditor({ section }: { section: Section }) {
     <div style={{ background: '#FBF8EF', borderRadius: 12, padding: '12px 14px', marginTop: 10 }}>
       <div className="inline-form" style={{ marginTop: 0 }}>
         <input value={heading} onChange={e => setHeading(e.target.value)} placeholder="小節標題" style={{ flex: 1, minWidth: 200 }} />
-        <button className="btn btn-s" disabled={busy} onClick={() => void save()}>{saved ? '存好了 ✓' : '存'}</button>
+        <button className="btn btn-s" disabled={busy} onClick={() => void save()}>{saved ? <><IconCheck size={13} />存好了</> : '存'}</button>
       </div>
       <textarea className="note-ta" style={{ minHeight: 70 }} value={items} onChange={e => setItems(e.target.value)}
         placeholder={'條列重點——一行一點'} />
@@ -314,7 +315,7 @@ function MaterialAdminRow({ material, onToggle }: { material: Material; onToggle
   return (
     <div className="arow">
       <div className="grow">
-        <b style={{ fontSize: 13 }}>{material.kind === 'video' ? '🎬' : '📄'} {material.label}</b>
+        <b className="i" style={{ fontSize: 13 }}>{material.kind === 'video' ? <IconFilm size={14} /> : <IconFileText size={14} />}{material.label}</b>
         {!material.is_active && <span className="sub">已停用——學員看不到</span>}
       </div>
       <button className="btn-line" disabled={busy} onClick={() => void toggle()}>
