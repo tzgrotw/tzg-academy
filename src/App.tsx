@@ -6,6 +6,7 @@ import { CoursePage } from './pages/CoursePage'
 import { LearnPage } from './pages/LearnPage'
 import { AuthPage } from './pages/AuthPage'
 import { AdminPage } from './pages/AdminPage'
+import { MyPage } from './pages/MyPage'
 
 export function App() {
   return (
@@ -16,6 +17,7 @@ export function App() {
           <Route path="/courses" element={<CatalogPage />} />
           <Route path="/course/:id" element={<CoursePage />} />
           <Route path="/learn/:chapterKey" element={<LearnPage />} />
+          <Route path="/my" element={<MyPage />} />
           <Route path="/login" element={<AuthPage mode="login" />} />
           <Route path="/register" element={<AuthPage mode="register" />} />
           <Route path="/admin" element={<AdminPage />} />

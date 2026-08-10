@@ -337,6 +337,11 @@ DO $$ BEGIN
   CREATE POLICY progress_own ON public.video_progress FOR ALL TO authenticated
     USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid());
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+-- 管理員看得到大家的進度（後台會員詳細頁用）——只能看，寫入還是只有本人
+DO $$ BEGIN
+  CREATE POLICY progress_admin_read ON public.video_progress FOR SELECT TO authenticated
+    USING (public.fn_is_admin());
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 -- ── 我的筆記（一人一章一份，只有自己看得到）────────────────────────
 CREATE TABLE IF NOT EXISTS public.course_notes (
