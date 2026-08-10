@@ -60,3 +60,19 @@ src/pages/            頁面：首頁/目錄/介紹/上課/註冊/後台
 ```
 
 搬到獨立 repo：整個 `academy/` 資料夾拷過去就能動（沒有任何對 TZG-Hub 的 import）。
+
+## 批量把課程影片從 Google Drive 搬到 YouTube
+
+`scripts/youtube-upload.cjs`——把 Google Drive 課程資料夾（課→章→影片/講義）整批下載後
+上傳成 YouTube unlisted 影片，講義（PDF）跳過不上傳（另外放 Supabase Storage）。
+
+```bash
+npm run upload:youtube
+```
+
+第一次跑之前要準備兩個東西（都不會進 git，`.gitignore` 已經擋了）：
+1. `.google-credentials.json`——Google Cloud Console →「憑證」→ 建立「OAuth 2.0 用戶端 ID」
+   （應用程式類型選「網頁應用程式」），把 `http://localhost:3000/oauth2callback` 加進
+   授權的重新導向 URI，下載下來的 JSON 改名放 repo 根目錄。
+2. 沒有 `.oauth-token.json` 的話，跑起來會印一個授權網址，瀏覽器打開登入完會自動導回
+   `localhost:3000` 換 token，不用手動貼授權碼。
