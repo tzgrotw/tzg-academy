@@ -20,23 +20,23 @@ export function HomePage() {
         <div className="veil" />
         <div className="wrap in">
           <p className="eyebrow">泰 熙 爾 札 娜 ・ 學 院</p>
-          <h1 className="serif">為自己活，<br />也為自己賺</h1>
-          <p className="sub">創業、自我成長、理財、自媒體、直播、珠寶——給想要獨立的妳，一間隨時開門的線上學院。手機就能上課，看到哪自動記到哪。</p>
+          <h1 className="serif">女性創業，<br />更愛自己</h1>
+          <p className="sub">創業、自我成長、理財、自媒體、直播、珠寶——給想要獨立的妳，一間隨時開門的線上學院。手機就能上課，看到哪成長到那。</p>
           <div className="cta">
             <Link className="btn btn-m" to={userId ? '/courses' : '/register'}>免費開始上課</Link>
             <Link className="btn btn-ghost" to="/courses">看全部課程</Link>
           </div>
-          <p className="note">公開課註冊就能看・註冊免費</p>
+          <p className="note">公開課註冊就能看・免費註冊</p>
         </div>
       </header>
 
       <div className="wrap sect">
         <p className="eyebrow">COURSES</p>
         <h2 className="serif">課程</h2>
-        <p className="lead">從創業心法到直播技巧——公開課免費看，進階課入會解鎖。每一門都有章節進度、里程碑獎勵、修畢證書。</p>
+        <p className="lead">從珠寶知識到AI技巧——公開課免費看，進階課入會解鎖。每一門都有章節進度、里程碑獎勵、修畢證書。</p>
         {!cat.loaded && <div className="skel" />}
         {cat.loaded && featured.length === 0 && (
-          <p className="muted" style={{ marginTop: 24 }}>課程準備中——學院正在把第一批課建上來，先註冊卡個位。</p>
+          <p className="muted" style={{ marginTop: 24 }}>課程準備中——先註冊卡個位。</p>
         )}
         <div className="grid">
           {featured.map(c => {
