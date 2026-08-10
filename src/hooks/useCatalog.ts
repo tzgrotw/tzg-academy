@@ -61,10 +61,15 @@ export function useCatalog() {
     setMaterials(ms => ms.map(m => m.id === id ? { ...m, ...patch } : m)), [])
   const patchAssessment = useCallback((id: number, patch: Partial<Assessment>) =>
     setAssessments(as => as.map(a => a.id === id ? { ...a, ...patch } : a)), [])
+  const patchReward = useCallback((id: number, patch: Partial<Reward>) =>
+    setRewards(rs => rs.map(r => r.id === id ? { ...r, ...patch } : r)), [])
   const addCourseLocal = useCallback((c: Course) => setCourses(cs => [...cs, c]), [])
   const addChapterLocal = useCallback((c: Chapter) => setChapters(chs => [...chs, c]), [])
   const addMaterialLocal = useCallback((m: Material) => setMaterials(ms => [...ms, m]), [])
   const addAssessmentLocal = useCallback((a: Assessment) => setAssessments(as => [...as, a]), [])
+  const addRewardLocal = useCallback((r: Reward) => setRewards(rs => [...rs, r]), [])
+  const removeRewardLocal = useCallback((id: number) =>
+    setRewards(rs => rs.filter(r => r.id !== id)), [])
 
   // 刪除有 FK cascade（章節掛在課程下、教材／測驗掛在章節下）——本地也照著砍，
   // 不用整包重撈；材料／測驗本身沒有下層，直接濾掉那一筆就好。
@@ -87,8 +92,8 @@ export function useCatalog() {
 
   return {
     courses, chapters, materials, assessments, rewards, loaded, reload: load, chaptersOf, courseStats,
-    patchCourse, patchChapter, patchMaterial, patchAssessment,
-    addCourseLocal, addChapterLocal, addMaterialLocal, addAssessmentLocal,
-    removeCourseLocal, removeChapterLocal, removeMaterialLocal, removeAssessmentLocal,
+    patchCourse, patchChapter, patchMaterial, patchAssessment, patchReward,
+    addCourseLocal, addChapterLocal, addMaterialLocal, addAssessmentLocal, addRewardLocal,
+    removeCourseLocal, removeChapterLocal, removeMaterialLocal, removeAssessmentLocal, removeRewardLocal,
   }
 }

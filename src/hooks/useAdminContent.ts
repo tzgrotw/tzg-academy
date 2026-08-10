@@ -2,7 +2,7 @@ import { useCallback } from 'react'
 import { useCatalog } from './useCatalog'
 import { supabase } from '../lib/supabase'
 import { extractYoutubeId } from '../lib/youtube'
-import type { Assessment, AssessmentKind, Chapter, Course, Material } from '../lib/types'
+import type { Assessment, AssessmentKind, Chapter, Course, Material, Reward } from '../lib/types'
 
 const newChapterKey = () => `ch${Date.now().toString(36)}`
 
@@ -99,6 +99,12 @@ export function useAdminContent() {
   const toggleMaterial = useCallback((material: Material) =>
     updateMaterial(material.id, { is_active: !material.is_active }), [updateMaterial])
 
+  const updateMaterialYoutubeId = useCallback(async (id: number, urlOrId: string) => {
+    const youtubeId = extractYoutubeId(urlOrId)
+    if (!youtubeId) return '看不出來是哪支 YouTube 影片——貼完整網址或 11 碼的影片 ID'
+    return updateMaterial(id, { youtube_id: youtubeId })
+  }, [updateMaterial])
+
   const addAssessment = useCallback(async (chapterKey: string, kind: AssessmentKind, afterSortNo: number) => {
     const { data, error } = await supabase.from('course_assessments').insert({
       chapter_key: chapterKey, kind, title: kind === 'quiz' ? '新測驗' : '新作業',
@@ -159,11 +165,37 @@ export function useAdminContent() {
     return null
   }, [cat])
 
+  // 里程碑／證書文案（course_rewards）——after_chapter=null 那筆是結業證書，有值的是章節里程碑。
+  // 這張表沒有軟刪除／cascade，是課程底下獨立的小張表，直接走一般 CRUD。
+  const addReward = useCallback(async (courseId: number, afterChapter: string | null) => {
+    const { data, error } = await supabase.from('course_rewards').insert({
+      course_id: courseId, after_chapter: afterChapter, title: afterChapter ? '新里程碑' : '結業證書',
+    }).select().single()
+    if (error) return error.message
+    cat.addRewardLocal(data as Reward)
+    return null
+  }, [cat])
+
+  const updateReward = useCallback(async (id: number, patch: Partial<Reward>) => {
+    const { error } = await supabase.from('course_rewards').update(patch).eq('id', id)
+    if (error) return error.message
+    cat.patchReward(id, patch)
+    return null
+  }, [cat])
+
+  const deleteReward = useCallback(async (id: number) => {
+    const { error } = await supabase.from('course_rewards').delete().eq('id', id)
+    if (error) return error.message
+    cat.removeRewardLocal(id)
+    return null
+  }, [cat])
+
   return {
     ...cat,
     createCourse, updateCourse, uploadCourseCover, deleteCourse,
     addChapter, updateChapter, uploadChapterCover, deleteChapter,
-    uploadMaterial, addYoutubeMaterial, updateMaterial, toggleMaterial, deleteMaterial,
+    uploadMaterial, addYoutubeMaterial, updateMaterial, toggleMaterial, updateMaterialYoutubeId, deleteMaterial,
     addAssessment, updateAssessment, deleteAssessment,
+    addReward, updateReward, deleteReward,
   }
 }

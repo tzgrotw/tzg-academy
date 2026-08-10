@@ -11,7 +11,7 @@ import { AUDIENCE_LABEL, TIER_LABEL } from '../lib/tier'
 import { IconCheck, IconChevron, IconFileText, IconFilm, IconTrash } from '../components/icons'
 import { ConfirmProvider, useConfirm } from '../components/ConfirmDialog'
 import { commitOrder, DragHandle, SortableList, type DragHandleProps } from '../components/Sortable'
-import type { Assessment, AssessmentKind, AssessmentSubmission, Audience, Chapter, Course, Material, QuizQuestion, Section, Tier } from '../lib/types'
+import type { Assessment, AssessmentKind, AssessmentSubmission, Audience, Chapter, Course, Material, QuizQuestion, Reward, Section, Tier } from '../lib/types'
 
 // 後台——四個分頁：會員（搜尋＋一鍵改身分）、課程（課程列表 → 點進去看該課的章節/教材/測驗）、作業批改、垃圾桶。
 // 課程結構跟課程設定分開兩塊；排序用拖曳（SortableList）；刪除都走 ConfirmDialog 確認，砍下去是軟刪除
@@ -166,6 +166,9 @@ function CourseDetail({ course, content, confirm, onBack }: {
   }
 
   const chapters = content.chapters.filter(ch => ch.course_id === course.id).sort((a, b) => a.sort_no - b.sort_no)
+  const rewards = content.rewards.filter(r => r.course_id === course.id)
+  const cert = rewards.find(r => !r.after_chapter) ?? null
+  const milestones = rewards.filter(r => r.after_chapter)
 
   async function addChapter() {
     setErr(await content.addChapter(course.id, chapters.at(-1)?.sort_no ?? 0))
@@ -173,6 +176,15 @@ function CourseDetail({ course, content, confirm, onBack }: {
 
   function reorderChapters(newOrder: Chapter[]) {
     commitOrder(newOrder, (c, sortNo) => void content.updateChapter(c.key, { sort_no: sortNo }))
+  }
+
+  async function addCert() {
+    setErr(await content.addReward(course.id, null))
+  }
+
+  async function addMilestone() {
+    if (chapters.length === 0) return
+    setErr(await content.addReward(course.id, chapters[0].key))
   }
 
   return (
@@ -213,6 +225,71 @@ function CourseDetail({ course, content, confirm, onBack }: {
           <button className="btn-line" onClick={() => void addChapter()}>＋加一章</button>
         </p>
       </div>
+
+      <div className="curr-section">
+        <div className="curr-section-hd"><h4>里程碑與證書</h4></div>
+        <p className="muted" style={{ fontSize: 13 }}>
+          結業證書：全部章節（含測驗／作業）修完會拿到，一門課只有一筆。里程碑：選定的那一章修完就跳出來，可以加很多筆。
+        </p>
+        {cert && <RewardEditor reward={cert} chapters={chapters} content={content} confirm={confirm} isCert />}
+        {!cert && (
+          <p style={{ marginTop: 10 }}><button className="btn-line" onClick={() => void addCert()}>＋加結業證書文案</button></p>
+        )}
+        {milestones.map(r => (
+          <RewardEditor key={r.id} reward={r} chapters={chapters} content={content} confirm={confirm} isCert={false} />
+        ))}
+        <p style={{ marginTop: 10 }}>
+          <button className="btn-line" disabled={chapters.length === 0} onClick={() => void addMilestone()}>＋加章節里程碑</button>
+        </p>
+      </div>
+    </div>
+  )
+}
+
+function RewardEditor({ reward, chapters, content, confirm, isCert }: {
+  reward: Reward
+  chapters: Chapter[]
+  content: AdminContent
+  confirm: Confirm
+  isCert: boolean
+}) {
+  const [title, setTitle] = useState(reward.title)
+  const [message, setMessage] = useState(reward.message)
+  const [afterChapter, setAfterChapter] = useState(reward.after_chapter ?? chapters[0]?.key ?? '')
+  const [busy, setBusy] = useState(false)
+  const [saved, setSaved] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+
+  async function save() {
+    setBusy(true); setSaved(false); setErr(null)
+    const patch: Partial<Reward> = { title, message }
+    if (!isCert) patch.after_chapter = afterChapter || null
+    const e = await content.updateReward(reward.id, patch)
+    setErr(e); setBusy(false)
+    if (!e) setSaved(true)
+  }
+
+  async function del() {
+    const ok = await confirm(`確定要刪除「${reward.title}」這筆${isCert ? '結業證書文案' : '里程碑'}？不能復原。`, { danger: true })
+    if (!ok) return
+    setErr(await content.deleteReward(reward.id))
+  }
+
+  return (
+    <div style={{ background: '#FBF8EF', borderRadius: 12, padding: '12px 14px', marginTop: 10 }}>
+      <div className="inline-form" style={{ marginTop: 0 }}>
+        {!isCert && (
+          <select value={afterChapter} onChange={e => setAfterChapter(e.target.value)}>
+            {chapters.map((c, i) => <option key={c.key} value={c.key}>第 {i + 1} 章・{c.title}</option>)}
+          </select>
+        )}
+        <input value={title} onChange={e => setTitle(e.target.value)} placeholder="標題" style={{ flex: 1, minWidth: 180 }} />
+        <button className="btn btn-s" disabled={busy} onClick={() => void save()}>{saved ? <><IconCheck size={13} />存好了</> : '存'}</button>
+        <button className="icon-btn danger" title="刪除" onClick={() => void del()}><IconTrash size={14} /></button>
+      </div>
+      <textarea className="note-ta" style={{ minHeight: 60 }} value={message} onChange={e => setMessage(e.target.value)}
+        placeholder="給學員看的文案（選填）" />
+      {err && <p className="formerr">{err}</p>}
     </div>
   )
 }
@@ -303,6 +380,13 @@ function ChapterCard({ chapter, handle, content, confirm }: {
     })
   }
 
+  async function toggleSection(section: Section) {
+    const { error } = await supabase.from('course_sections')
+      .update({ is_active: !section.is_active }).eq('id', section.id)
+    if (error) { setErr(error.message); return }
+    setSections(ss => ss.map(s => s.id === section.id ? { ...s, is_active: !s.is_active } : s))
+  }
+
   async function deleteSection(section: Section) {
     const ok = await confirm(`確定要刪除「${section.heading}」這段小節內文？不能復原。`, { danger: true })
     if (!ok) return
@@ -351,7 +435,10 @@ function ChapterCard({ chapter, handle, content, confirm }: {
           </div>
 
           <SortableList items={sections} getId={s => String(s.id)} onReorder={reorderSections}>
-            {(s, sHandle) => <SectionEditor section={s} handle={sHandle} onDelete={() => void deleteSection(s)} />}
+            {(s, sHandle) => (
+              <SectionEditor section={s} handle={sHandle}
+                onToggle={() => void toggleSection(s)} onDelete={() => void deleteSection(s)} />
+            )}
           </SortableList>
 
           <SortableList items={materials} getId={m => String(m.id)} onReorder={reorderMaterials}>
@@ -359,6 +446,7 @@ function ChapterCard({ chapter, handle, content, confirm }: {
               <MaterialAdminRow material={m} handle={mHandle}
                 onToggle={() => content.toggleMaterial(m)}
                 onRename={label => content.updateMaterial(m.id, { label })}
+                onRenameYoutube={urlOrId => content.updateMaterialYoutubeId(m.id, urlOrId)}
                 onDelete={() => void deleteMaterial(m)} />
             )}
           </SortableList>
@@ -590,7 +678,12 @@ function QuestionRow({ question, handle, onPatch, onDelete }: {
   )
 }
 
-function SectionEditor({ section, handle, onDelete }: { section: Section; handle: DragHandleProps; onDelete: () => void }) {
+function SectionEditor({ section, handle, onToggle, onDelete }: {
+  section: Section
+  handle: DragHandleProps
+  onToggle: () => void
+  onDelete: () => void
+}) {
   const [heading, setHeading] = useState(section.heading)
   const [items, setItems] = useState(section.items.join('\n'))
   const [note, setNote] = useState(section.note ?? '')
@@ -612,8 +705,10 @@ function SectionEditor({ section, handle, onDelete }: { section: Section; handle
         <DragHandle {...handle} />
         <input value={heading} onChange={e => setHeading(e.target.value)} placeholder="小節標題" style={{ flex: 1, minWidth: 200 }} />
         <button className="btn btn-s" disabled={busy} onClick={() => void save()}>{saved ? <><IconCheck size={13} />存好了</> : '存'}</button>
+        <button className="btn-line" onClick={onToggle}>{section.is_active ? '停用' : '啟用'}</button>
         <button className="icon-btn danger" title="刪除小節內文" onClick={onDelete}><IconTrash size={14} /></button>
       </div>
+      {!section.is_active && <p className="sub" style={{ marginTop: 6 }}>已停用——學員看不到</p>}
       <textarea className="note-ta" style={{ minHeight: 70 }} value={items} onChange={e => setItems(e.target.value)}
         placeholder={'條列重點——一行一點'} />
       <input style={{ width: '100%', border: '1px solid rgba(197,179,130,.55)', borderRadius: 10, padding: '9px 12px', font: 'inherit', fontSize: 13.5, background: '#FFFDF7', marginTop: 8 }}
@@ -622,17 +717,20 @@ function SectionEditor({ section, handle, onDelete }: { section: Section; handle
   )
 }
 
-function MaterialAdminRow({ material, handle, onToggle, onRename, onDelete }: {
+function MaterialAdminRow({ material, handle, onToggle, onRename, onRenameYoutube, onDelete }: {
   material: Material
   handle: DragHandleProps
   onToggle: () => Promise<string | null>
   onRename: (label: string) => Promise<string | null>
+  onRenameYoutube: (urlOrId: string) => Promise<string | null>
   onDelete: () => void
 }) {
   const [label, setLabel] = useState(material.label)
+  const [ytId, setYtId] = useState(material.youtube_id ?? '')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
-  const dirty = label.trim() !== '' && label.trim() !== material.label
+  const labelDirty = label.trim() !== '' && label.trim() !== material.label
+  const ytDirty = ytId.trim() !== '' && ytId.trim() !== material.youtube_id
 
   async function toggle() {
     setBusy(true)
@@ -646,6 +744,13 @@ function MaterialAdminRow({ material, handle, onToggle, onRename, onDelete }: {
     setBusy(false)
   }
 
+  async function renameYoutube() {
+    setBusy(true); setErr(null)
+    const e = await onRenameYoutube(ytId.trim())
+    setErr(e)
+    setBusy(false)
+  }
+
   return (
     <div className="mat-row" style={{ flexWrap: 'wrap' }}>
       <DragHandle {...handle} />
@@ -654,12 +759,20 @@ function MaterialAdminRow({ material, handle, onToggle, onRename, onDelete }: {
       </span>
       <input value={label} onChange={e => setLabel(e.target.value)} placeholder="教材名稱"
         style={{ flex: 1, minWidth: 140, border: '1px solid rgba(197,179,130,.4)', borderRadius: 8, padding: '6px 10px', font: 'inherit', fontSize: 13, background: '#FFFDF7' }} />
-      {dirty && <button className="btn btn-s" disabled={busy} onClick={() => void rename()}>存</button>}
+      {labelDirty && <button className="btn btn-s" disabled={busy} onClick={() => void rename()}>存</button>}
       {!material.is_active && <span className="sub" style={{ flex: 'none' }}>已停用——學員看不到</span>}
       <button className="btn-line" disabled={busy} onClick={() => void toggle()}>
         {material.is_active ? '停用' : '啟用'}
       </button>
       <button className="icon-btn danger" disabled={busy} title="刪除教材" onClick={onDelete}><IconTrash size={14} /></button>
+      {material.youtube_id && (
+        <div style={{ display: 'flex', gap: 8, width: '100%', alignItems: 'center', marginLeft: 24 }}>
+          <span className="sub" style={{ flex: 'none' }}>YouTube 網址</span>
+          <input value={ytId} onChange={e => setYtId(e.target.value)} placeholder="貼新的 YouTube 網址或影片 ID"
+            style={{ flex: 1, minWidth: 140, border: '1px solid rgba(197,179,130,.4)', borderRadius: 8, padding: '5px 10px', font: 'inherit', fontSize: 12.5, background: '#FFFDF7' }} />
+          {ytDirty && <button className="btn btn-s" disabled={busy} onClick={() => void renameYoutube()}>存</button>}
+        </div>
+      )}
       {err && <p className="formerr" style={{ width: '100%', margin: 0 }}>{err}</p>}
     </div>
   )
