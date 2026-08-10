@@ -275,6 +275,21 @@ function ChapterCard({ chapter, handle, content, confirm }: {
     commitOrder(newOrder, (m, sortNo) => void content.updateMaterial(m.id, { sort_no: sortNo }))
   }
 
+  function reorderSections(newOrder: Section[]) {
+    setSections(newOrder)
+    commitOrder(newOrder, (s, sortNo) => {
+      void supabase.from('course_sections').update({ sort_no: sortNo }).eq('id', s.id)
+    })
+  }
+
+  async function deleteSection(section: Section) {
+    const ok = await confirm(`確定要刪除「${section.heading}」這段小節內文？不能復原。`, { danger: true })
+    if (!ok) return
+    const { error } = await supabase.from('course_sections').delete().eq('id', section.id)
+    if (error) { setErr(error.message); return }
+    setSections(ss => ss.filter(s => s.id !== section.id))
+  }
+
   async function deleteChapter() {
     const ok = await confirm(`確定要刪除「${chapter.title}」這一章？裡面的教材會一起砍掉，不能復原。`, { danger: true })
     if (!ok) return
@@ -314,7 +329,9 @@ function ChapterCard({ chapter, handle, content, confirm }: {
             </button>
           </div>
 
-          {sections.map(s => <SectionEditor key={s.id} section={s} />)}
+          <SortableList items={sections} getId={s => String(s.id)} onReorder={reorderSections}>
+            {(s, sHandle) => <SectionEditor section={s} handle={sHandle} onDelete={() => void deleteSection(s)} />}
+          </SortableList>
 
           <SortableList items={materials} getId={m => String(m.id)} onReorder={reorderMaterials}>
             {(m, mHandle) => (
@@ -349,7 +366,7 @@ function ChapterCard({ chapter, handle, content, confirm }: {
   )
 }
 
-function SectionEditor({ section }: { section: Section }) {
+function SectionEditor({ section, handle, onDelete }: { section: Section; handle: DragHandleProps; onDelete: () => void }) {
   const [heading, setHeading] = useState(section.heading)
   const [items, setItems] = useState(section.items.join('\n'))
   const [note, setNote] = useState(section.note ?? '')
@@ -368,8 +385,10 @@ function SectionEditor({ section }: { section: Section }) {
   return (
     <div style={{ background: '#FBF8EF', borderRadius: 12, padding: '12px 14px', marginTop: 10 }}>
       <div className="inline-form" style={{ marginTop: 0 }}>
+        <DragHandle {...handle} />
         <input value={heading} onChange={e => setHeading(e.target.value)} placeholder="小節標題" style={{ flex: 1, minWidth: 200 }} />
         <button className="btn btn-s" disabled={busy} onClick={() => void save()}>{saved ? <><IconCheck size={13} />存好了</> : '存'}</button>
+        <button className="icon-btn danger" title="刪除小節內文" onClick={onDelete}><IconTrash size={14} /></button>
       </div>
       <textarea className="note-ta" style={{ minHeight: 70 }} value={items} onChange={e => setItems(e.target.value)}
         placeholder={'條列重點——一行一點'} />
