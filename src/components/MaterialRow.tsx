@@ -22,6 +22,57 @@ export function VideoRow({ video, progress, onProgress }: {
   progress: Progress | null
   onProgress: (videoId: number, pct: number, lastSec: number) => void
 }) {
+  if (video.youtube_id) return <YoutubeVideoRow video={video} progress={progress} onProgress={onProgress} />
+  return <StorageVideoRow video={video} progress={progress} onProgress={onProgress} />
+}
+
+/** YouTube 內嵌播放——iframe 沒辦法像 <video> 一樣拿到 timeupdate，
+ *  簡單版先不自動抓百分比，看完自己按「標記看完」（README 決定：先求穩，之後想做自動追蹤再接 YouTube IFrame API）。 */
+function YoutubeVideoRow({ video, progress, onProgress }: {
+  video: Material
+  progress: Progress | null
+  onProgress: (videoId: number, pct: number, lastSec: number) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const done = isDone(progress)
+
+  if (open) {
+    return (
+      <div className="player-box">
+        <p style={{ fontSize: 13, fontWeight: 700, marginTop: 14 }}>{video.label}</p>
+        <div className="yt-wrap">
+          <iframe
+            src={`https://www.youtube-nocookie.com/embed/${video.youtube_id}?rel=0`}
+            title={video.label} allowFullScreen
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+          />
+        </div>
+        {!done && (
+          <button className="btn-line" style={{ marginTop: 12 }} onClick={() => onProgress(video.id, 100, 0)}>
+            看完了・標記這支
+          </button>
+        )}
+      </div>
+    )
+  }
+
+  return (
+    <button className="vrow" onClick={() => setOpen(true)}>
+      <span className={`ic ${done ? 'done' : 'play'}`}>{done && <IconCheck size={16} />}</span>
+      <span style={{ minWidth: 0, flex: 1 }}>
+        <b>{video.label}</b>
+        <span className="sub">{done ? '看完了——點了可以重看' : '點了開始播'}</span>
+      </span>
+      {done && <span className="pct i"><IconCheck size={11} />看完</span>}
+    </button>
+  )
+}
+
+function StorageVideoRow({ video, progress, onProgress }: {
+  video: Material
+  progress: Progress | null
+  onProgress: (videoId: number, pct: number, lastSec: number) => void
+}) {
   const [url, setUrl] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)

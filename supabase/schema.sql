@@ -144,11 +144,14 @@ CREATE TABLE IF NOT EXISTS public.course_videos (
   label TEXT NOT NULL,
   kind TEXT NOT NULL DEFAULT 'video' CHECK (kind IN ('video','doc','image')),
   storage_path TEXT,
+  youtube_id TEXT,
   duration_sec INT,
   sort_no INT NOT NULL DEFAULT 100,
   is_active BOOLEAN NOT NULL DEFAULT true,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+-- 舊資料庫已經有這張表的話，補這欄（新資料庫上面 CREATE TABLE 就直接帶了，這行只是 no-op）
+ALTER TABLE public.course_videos ADD COLUMN IF NOT EXISTS youtube_id TEXT;
 ALTER TABLE public.course_videos ENABLE ROW LEVEL SECURITY;
 DO $$ BEGIN
   CREATE POLICY videos_read ON public.course_videos FOR SELECT

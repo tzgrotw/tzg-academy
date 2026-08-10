@@ -176,6 +176,8 @@ button { font-family: inherit; }
 .vrow .sub { display: block; font-size: 11.5px; color: var(--tx-muted); margin-top: 2px; }
 .vrow .pct { margin-left: auto; font-size: 12px; color: var(--tx-muted); font-variant-numeric: tabular-nums; flex: none; }
 .player-box video { width: 100%; border-radius: 16px; background: #000; aspect-ratio: 16/9; margin-top: 16px; }
+.player-box .yt-wrap { width: 100%; aspect-ratio: 16/9; margin-top: 16px; border-radius: 16px; overflow: hidden; background: #000; }
+.player-box .yt-wrap iframe { width: 100%; height: 100%; border: none; display: block; }
 .pn { display: flex; gap: 14px; margin-top: 26px; }
 .pn a { flex: 1; display: flex; flex-direction: column; gap: 3px; text-decoration: none; border-radius: 14px; padding: 15px 20px; font-size: 14.5px; font-weight: 700; transition: .25s; }
 .pn small { font-size: 11px; font-weight: 400; opacity: .75; }
