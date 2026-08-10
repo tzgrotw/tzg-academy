@@ -3,3 +3,8 @@ dist/
 *.tsbuildinfo
 .env
 .env.local
+
+# scripts/youtube-upload.cjs — Google OAuth 凭证/token，绝对不能进 git
+.google-credentials.json
+.oauth-token.json
+.temp-uploads/
