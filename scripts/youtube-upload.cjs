@@ -202,6 +202,8 @@ async function downloadFile(auth, fileId, fileName) {
   return filePath;
 }
 
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
 // ═══ 上传到 YouTube ═══
 async function uploadToYouTube(auth, filePath, title, description) {
   const youtube = google.youtube({ version: 'v3', auth });
@@ -223,9 +225,21 @@ async function uploadToYouTube(auth, filePath, title, description) {
     },
     media: { body: fs.createReadStream(filePath) },
   });
+  const videoId = res.data.id;
 
-  console.log(`  ✅ YouTube 上传完成 (ID: ${res.data.id})`);
-  return res.data.id;
+  // videos.insert 回傳成功只代表檔案送到了，YouTube 後續還會做一次处理（转码/审核）——
+  // 帐号没验证手机号时超过 15 分钟的影片会在这一步被拒绝。等几秒后查一次状态，
+  // 抓到「上传完成但处理失败」的情况，不要把这种影片误记进已上传名单。
+  await sleep(5000);
+  const check = await youtube.videos.list({ part: 'status', id: [videoId] });
+  const status = check.data.items?.[0]?.status;
+  if (status?.uploadStatus === 'failed' || status?.uploadStatus === 'rejected') {
+    const reason = status.failureReason || status.rejectionReason || status.uploadStatus;
+    throw new Error(`YouTube 处理失败（${reason}）——常见原因：帐号没验证手机号，影片超过 15 分钟上限`);
+  }
+
+  console.log(`  ✅ YouTube 上传完成 (ID: ${videoId})`);
+  return videoId;
 }
 
 // ═══ 上传记录（Drive fileId → YouTube videoId）═══
