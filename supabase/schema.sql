@@ -64,9 +64,12 @@ CREATE TABLE IF NOT EXISTS public.courses (
   cover_url TEXT,
   sort_no INT NOT NULL DEFAULT 100,
   is_active BOOLEAN NOT NULL DEFAULT true,
+  deleted_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+-- 舊資料庫補這欄（軟刪除——後台誤刪可以從垃圾桶救回來，不是馬上真的砍掉）
+ALTER TABLE public.courses ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
 ALTER TABLE public.courses ENABLE ROW LEVEL SECURITY;
 DO $$ BEGIN
   CREATE POLICY courses_read ON public.courses FOR SELECT
@@ -86,8 +89,10 @@ CREATE TABLE IF NOT EXISTS public.course_chapters (
   cover_url TEXT,
   sort_no INT NOT NULL DEFAULT 100,
   is_active BOOLEAN NOT NULL DEFAULT true,
+  deleted_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+ALTER TABLE public.course_chapters ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
 ALTER TABLE public.course_chapters ENABLE ROW LEVEL SECURITY;
 DO $$ BEGIN
   CREATE POLICY chapters_read ON public.course_chapters FOR SELECT
@@ -148,10 +153,12 @@ CREATE TABLE IF NOT EXISTS public.course_videos (
   duration_sec INT,
   sort_no INT NOT NULL DEFAULT 100,
   is_active BOOLEAN NOT NULL DEFAULT true,
+  deleted_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
--- 舊資料庫已經有這張表的話，補這欄（新資料庫上面 CREATE TABLE 就直接帶了，這行只是 no-op）
+-- 舊資料庫已經有這張表的話，補這幾欄（新資料庫上面 CREATE TABLE 就直接帶了，這幾行只是 no-op）
 ALTER TABLE public.course_videos ADD COLUMN IF NOT EXISTS youtube_id TEXT;
+ALTER TABLE public.course_videos ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
 ALTER TABLE public.course_videos ENABLE ROW LEVEL SECURITY;
 DO $$ BEGIN
   CREATE POLICY videos_read ON public.course_videos FOR SELECT
@@ -174,8 +181,10 @@ CREATE TABLE IF NOT EXISTS public.course_assessments (
   pass_pct INT NOT NULL DEFAULT 60,
   sort_no INT NOT NULL DEFAULT 100,
   is_active BOOLEAN NOT NULL DEFAULT true,
+  deleted_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+ALTER TABLE public.course_assessments ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
 ALTER TABLE public.course_assessments ENABLE ROW LEVEL SECURITY;
 DO $$ BEGIN
   CREATE POLICY assessments_read ON public.course_assessments FOR SELECT

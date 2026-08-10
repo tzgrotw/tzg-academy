@@ -18,6 +18,7 @@ export interface Course {
   cover_url: string | null
   sort_no: number
   is_active: boolean
+  deleted_at: string | null
 }
 
 export interface Chapter {
@@ -28,6 +29,7 @@ export interface Chapter {
   cover_url: string | null
   sort_no: number
   is_active: boolean
+  deleted_at: string | null
 }
 
 export interface Section {
@@ -52,6 +54,7 @@ export interface Material {
   duration_sec: number | null
   sort_no: number
   is_active: boolean
+  deleted_at: string | null
 }
 
 export interface Progress {
@@ -82,6 +85,7 @@ export interface Assessment {
   pass_pct: number
   sort_no: number
   is_active: boolean
+  deleted_at: string | null
 }
 
 // 學員端題目——特意不含 correct_index，只能透過 fn_quiz_questions() RPC 拿到

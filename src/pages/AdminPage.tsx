@@ -5,6 +5,7 @@ import { useAuth } from '../hooks/useAuth'
 import { useAdminMembers } from '../hooks/useAdminMembers'
 import { useAdminContent } from '../hooks/useAdminContent'
 import { useAdminSubmissions } from '../hooks/useAdminSubmissions'
+import { useAdminTrash } from '../hooks/useAdminTrash'
 import { supabase } from '../lib/supabase'
 import { AUDIENCE_LABEL, TIER_LABEL } from '../lib/tier'
 import { IconCheck, IconChevron, IconFileText, IconFilm, IconTrash } from '../components/icons'
@@ -12,13 +13,14 @@ import { ConfirmProvider, useConfirm } from '../components/ConfirmDialog'
 import { commitOrder, DragHandle, SortableList, type DragHandleProps } from '../components/Sortable'
 import type { Assessment, AssessmentKind, AssessmentSubmission, Audience, Chapter, Course, Material, QuizQuestion, Section, Tier } from '../lib/types'
 
-// 後台——三個分頁：會員（搜尋＋一鍵改身分）、課程（課程列表 → 點進去看該課的章節/教材/測驗）、作業批改。
-// 課程結構跟課程設定分開兩塊；排序用拖曳（SortableList）；刪除都走 ConfirmDialog，不用瀏覽器內建 confirm()。
-// 資料存取都在 hooks/useAdminMembers、hooks/useAdminContent、hooks/useAdminSubmissions；這裡只管畫面。
+// 後台——四個分頁：會員（搜尋＋一鍵改身分）、課程（課程列表 → 點進去看該課的章節/教材/測驗）、作業批改、垃圾桶。
+// 課程結構跟課程設定分開兩塊；排序用拖曳（SortableList）；刪除都走 ConfirmDialog 確認，砍下去是軟刪除
+// （進垃圾桶，不是真的沒了）——誤刪從垃圾桶分頁救得回來。
+// 資料存取都在 hooks/useAdminMembers、useAdminContent、useAdminSubmissions、useAdminTrash；這裡只管畫面。
 
 export function AdminPage() {
   const { profile, loading } = useAuth()
-  const [tab, setTab] = useState<'members' | 'content' | 'grading'>('members')
+  const [tab, setTab] = useState<'members' | 'content' | 'grading' | 'trash'>('members')
 
   if (loading) return <Page><div className="wrap"><div className="skel" style={{ marginTop: 40 }} /></div></Page>
   if (profile?.tier !== 'admin') return <Navigate to="/" replace />
@@ -33,9 +35,11 @@ export function AdminPage() {
               <button className={tab === 'members' ? 'on' : ''} onClick={() => setTab('members')}>會員</button>
               <button className={tab === 'content' ? 'on' : ''} onClick={() => setTab('content')}>課程</button>
               <button className={tab === 'grading' ? 'on' : ''} onClick={() => setTab('grading')}>作業批改</button>
+              <button className={tab === 'trash' ? 'on' : ''} onClick={() => setTab('trash')}>垃圾桶</button>
             </div>
           </div>
-          {tab === 'members' ? <MembersTab /> : tab === 'content' ? <ContentTab /> : <GradingTab />}
+          {tab === 'members' ? <MembersTab /> : tab === 'content' ? <ContentTab />
+            : tab === 'grading' ? <GradingTab /> : <TrashTab />}
         </div>
       </Page>
     </ConfirmProvider>
@@ -744,6 +748,104 @@ function SubmissionRow({ submission, title, path, memberLabel, fileUrl, busy, on
         <button className="btn btn-s" disabled={busy} onClick={() => void grade('passed')}>通過</button>
         <button className="btn-line" disabled={busy} onClick={() => void grade('failed')}>退回</button>
       </div>
+    </div>
+  )
+}
+
+/* ───────────────────────── 垃圾桶 ───────────────────────── */
+
+function TrashTab() {
+  const trash = useAdminTrash()
+  const confirm = useConfirm()
+  const [err, setErr] = useState<string | null>(null)
+
+  const total = trash.courses.length + trash.chapters.length + trash.materials.length + trash.assessments.length
+
+  async function purge(label: string, fn: () => Promise<string | null>) {
+    const ok = await confirm(`永久刪除「${label}」？垃圾桶清掉之後真的救不回來了。`, { danger: true })
+    if (!ok) return
+    setErr(await fn())
+  }
+
+  return (
+    <div className="acard">
+      <h3>垃圾桶{trash.loaded ? `（${total}）` : ''}</h3>
+      <p className="muted" style={{ fontSize: 13, marginTop: 6 }}>
+        後台刪除都是先進垃圾桶，不是馬上真的沒了——點「還原」救回來，或「永久刪除」才是真的清掉。
+      </p>
+      {!trash.loaded && <div className="skel" style={{ marginTop: 16 }} />}
+      {trash.loaded && total === 0 && (
+        <p className="muted" style={{ marginTop: 16, fontSize: 13 }}>垃圾桶是空的。</p>
+      )}
+      {err && <p className="formerr">{err}</p>}
+
+      {trash.courses.length > 0 && (
+        <>
+          <div className="curr-section-hd" style={{ marginTop: 18 }}><h4>課程（{trash.courses.length}）</h4></div>
+          {trash.courses.map(c => (
+            <div className="arow" key={c.id}>
+              <div className="grow">
+                <b>{c.title}</b>
+                <span className="sub">刪除於 {new Date(c.deleted_at ?? '').toLocaleString('zh-TW')}</span>
+              </div>
+              <button className="btn-line" onClick={() => void trash.restoreCourse(c.id).then(e => setErr(e))}>還原</button>
+              <button className="icon-btn danger" title="永久刪除"
+                onClick={() => void purge(c.title, () => trash.purgeCourse(c.id))}><IconTrash size={15} /></button>
+            </div>
+          ))}
+        </>
+      )}
+
+      {trash.chapters.length > 0 && (
+        <>
+          <div className="curr-section-hd" style={{ marginTop: 18 }}><h4>章節（{trash.chapters.length}）</h4></div>
+          {trash.chapters.map(c => (
+            <div className="arow" key={c.key}>
+              <div className="grow">
+                <b>{c.title}</b>
+                <span className="sub">{c.courseTitle}・刪除於 {new Date(c.deleted_at ?? '').toLocaleString('zh-TW')}</span>
+              </div>
+              <button className="btn-line" onClick={() => void trash.restoreChapter(c.key).then(e => setErr(e))}>還原</button>
+              <button className="icon-btn danger" title="永久刪除"
+                onClick={() => void purge(c.title, () => trash.purgeChapter(c.key))}><IconTrash size={15} /></button>
+            </div>
+          ))}
+        </>
+      )}
+
+      {trash.materials.length > 0 && (
+        <>
+          <div className="curr-section-hd" style={{ marginTop: 18 }}><h4>教材（{trash.materials.length}）</h4></div>
+          {trash.materials.map(m => (
+            <div className="arow" key={m.id}>
+              <div className="grow">
+                <b>{m.label}</b>
+                <span className="sub">{m.courseTitle} ‹ {m.chapterTitle}・刪除於 {new Date(m.deleted_at ?? '').toLocaleString('zh-TW')}</span>
+              </div>
+              <button className="btn-line" onClick={() => void trash.restoreMaterial(m.id).then(e => setErr(e))}>還原</button>
+              <button className="icon-btn danger" title="永久刪除"
+                onClick={() => void purge(m.label, () => trash.purgeMaterial(m.id))}><IconTrash size={15} /></button>
+            </div>
+          ))}
+        </>
+      )}
+
+      {trash.assessments.length > 0 && (
+        <>
+          <div className="curr-section-hd" style={{ marginTop: 18 }}><h4>測驗／作業（{trash.assessments.length}）</h4></div>
+          {trash.assessments.map(a => (
+            <div className="arow" key={a.id}>
+              <div className="grow">
+                <b>{a.title}</b>
+                <span className="sub">{a.courseTitle} ‹ {a.chapterTitle}・刪除於 {new Date(a.deleted_at ?? '').toLocaleString('zh-TW')}</span>
+              </div>
+              <button className="btn-line" onClick={() => void trash.restoreAssessment(a.id).then(e => setErr(e))}>還原</button>
+              <button className="icon-btn danger" title="永久刪除"
+                onClick={() => void purge(a.title, () => trash.purgeAssessment(a.id))}><IconTrash size={15} /></button>
+            </div>
+          ))}
+        </>
+      )}
     </div>
   )
 }

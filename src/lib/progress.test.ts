@@ -11,6 +11,7 @@ function material(overrides: Partial<Material> & { id: number; chapter_key: stri
     duration_sec: 300,
     sort_no: overrides.id,
     is_active: true,
+    deleted_at: null,
     ...overrides,
   }
 }

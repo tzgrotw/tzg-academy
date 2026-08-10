@@ -15,11 +15,13 @@ export function useCatalog() {
 
   const load = useCallback(async () => {
     try {
+      // .is('deleted_at', null)：軟刪除的（在垃圾桶裡）不進這裡——這是唯一撈這幾張表的地方，
+      // 學員／後台編輯畫面共用，垃圾桶另外用 useAdminTrash 撈。
       const [c, ch, m, a, r] = await Promise.all([
-        supabase.from('courses').select('*').order('sort_no').order('id'),
-        supabase.from('course_chapters').select('*').order('sort_no').order('key'),
-        supabase.from('course_videos').select('*').order('sort_no').order('id'),
-        supabase.from('course_assessments').select('*').order('sort_no').order('id'),
+        supabase.from('courses').select('*').is('deleted_at', null).order('sort_no').order('id'),
+        supabase.from('course_chapters').select('*').is('deleted_at', null).order('sort_no').order('key'),
+        supabase.from('course_videos').select('*').is('deleted_at', null).order('sort_no').order('id'),
+        supabase.from('course_assessments').select('*').is('deleted_at', null).order('sort_no').order('id'),
         supabase.from('course_rewards').select('*').order('id'),
       ])
       setCourses((c.data as Course[] | null) ?? [])

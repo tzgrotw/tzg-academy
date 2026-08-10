@@ -117,30 +117,43 @@ export function useAdminContent() {
   }, [cat])
 
   const deleteAssessment = useCallback(async (id: number) => {
-    const { error } = await supabase.from('course_assessments').delete().eq('id', id)
+    const { error } = await supabase.from('course_assessments')
+      .update({ deleted_at: new Date().toISOString() }).eq('id', id)
     if (error) return error.message
     cat.removeAssessmentLocal(id)
     return null
   }, [cat])
 
-  // 三層都有 FK cascade（課→章→教材／測驗），DB 那邊砍一筆會連下層一起清掉；
+  // 刪除都是軟刪除（deleted_at）不是真的砍掉——後台「垃圾桶」分頁救得回來。
+  // 課→章→教材／測驗三層砍上層要連下層一起標記，不然子層會變成撈不到、但也沒進垃圾桶的孤兒資料；
   // 本地也對應地清（removeCourseLocal/removeChapterLocal 會一起濾掉子層）。
   const deleteCourse = useCallback(async (id: number) => {
-    const { error } = await supabase.from('courses').delete().eq('id', id)
+    const now = new Date().toISOString()
+    const chapterKeys = cat.chapters.filter(c => c.course_id === id).map(c => c.key)
+    const { error } = await supabase.from('courses').update({ deleted_at: now }).eq('id', id)
     if (error) return error.message
+    if (chapterKeys.length > 0) {
+      await supabase.from('course_chapters').update({ deleted_at: now }).in('key', chapterKeys)
+      await supabase.from('course_videos').update({ deleted_at: now }).in('chapter_key', chapterKeys)
+      await supabase.from('course_assessments').update({ deleted_at: now }).in('chapter_key', chapterKeys)
+    }
     cat.removeCourseLocal(id)
     return null
   }, [cat])
 
   const deleteChapter = useCallback(async (key: string) => {
-    const { error } = await supabase.from('course_chapters').delete().eq('key', key)
+    const now = new Date().toISOString()
+    const { error } = await supabase.from('course_chapters').update({ deleted_at: now }).eq('key', key)
     if (error) return error.message
+    await supabase.from('course_videos').update({ deleted_at: now }).eq('chapter_key', key)
+    await supabase.from('course_assessments').update({ deleted_at: now }).eq('chapter_key', key)
     cat.removeChapterLocal(key)
     return null
   }, [cat])
 
   const deleteMaterial = useCallback(async (id: number) => {
-    const { error } = await supabase.from('course_videos').delete().eq('id', id)
+    const { error } = await supabase.from('course_videos')
+      .update({ deleted_at: new Date().toISOString() }).eq('id', id)
     if (error) return error.message
     cat.removeMaterialLocal(id)
     return null
