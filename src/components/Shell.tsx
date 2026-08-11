@@ -10,6 +10,7 @@ export function Nav() {
       <Link to="/" className="logo serif"><b>泰熙爾札娜學院</b><span>TZG ACADEMY</span></Link>
       <div className="links">
         <Link to="/courses">全部課程</Link>
+        {userId && <Link to="/my">我的學習</Link>}
         {profile?.tier === 'admin' && <Link to="/admin">後台</Link>}
         {userId ? (
           <>

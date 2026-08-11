@@ -20,12 +20,14 @@ async function signUrl(path: string): Promise<string> {
 }
 
 /** 影片列：點一下換簽名網址、內嵌播放、自動記進度、自動續播。
- *  手機體驗是這一站的招牌（Kajabi 被罵的點）：playsInline＝iOS 轉橫向不中斷。 */
+ *  手機體驗是這一站的招牌（Kajabi 被罵的點）：playsInline＝iOS 轉橫向不中斷。
+ *  三種來源：Cloudflare Stream（收費課・簽名 token）→ YouTube（免費課）→ 自家 storage。 */
 export function VideoRow({ video, progress, onProgress }: {
   video: Material
   progress: Progress | null
   onProgress: (videoId: number, pct: number, lastSec: number) => void
 }) {
+  if (video.cf_stream_id) return <CfVideoRow video={video} progress={progress} onProgress={onProgress} />
   if (video.youtube_id) return <YoutubeVideoRow video={video} progress={progress} onProgress={onProgress} />
   return <StorageVideoRow video={video} progress={progress} onProgress={onProgress} />
 }
@@ -72,20 +74,19 @@ function YoutubeVideoRow({ video, progress, onProgress }: {
   )
 }
 
-function StorageVideoRow({ video, progress, onProgress }: {
+/** 進度追蹤播放器——storage 直連檔案跟 Cloudflare HLS 共用同一套：
+ *  自動續播、每 15 秒記進度、關分頁補寫、過期重簽。 */
+function TrackedPlayer({ video, url, hls, done, resumeSec, onProgress, onExpire }: {
   video: Material
-  progress: Progress | null
+  url: string
+  hls: boolean
+  done: boolean
+  resumeSec: number
   onProgress: (videoId: number, pct: number, lastSec: number) => void
+  onExpire: () => void
 }) {
-  const [url, setUrl] = useState<string | null>(null)
-  const [busy, setBusy] = useState(false)
-  const [err, setErr] = useState<string | null>(null)
   const ref = useRef<HTMLVideoElement | null>(null)
   const lastSavedRef = useRef(0)
-
-  const done = isDone(progress)
-  const pct = progress?.pct ?? 0
-  const resumeSec = progress?.last_sec ?? 0
 
   const save = useCallback((el: HTMLVideoElement, force = false) => {
     const dur = el.duration
@@ -108,6 +109,84 @@ function StorageVideoRow({ video, progress, onProgress }: {
     }
   }, [save])
 
+  // HLS 串流：Safari 原生就會播 m3u8；其他瀏覽器動態載 hls.js（跟 pdf.js 一樣，用到才載）
+  useEffect(() => {
+    const el = ref.current
+    if (!el || !hls) return
+    if (el.canPlayType('application/vnd.apple.mpegurl')) {
+      el.src = url
+      return
+    }
+    let destroyed = false
+    let instance: import('hls.js').default | null = null
+    void import('hls.js').then(({ default: Hls }) => {
+      if (destroyed || !ref.current) return
+      if (!Hls.isSupported()) { onExpire(); return }
+      instance = new Hls()
+      instance.loadSource(url)
+      instance.attachMedia(ref.current)
+      instance.on(Hls.Events.ERROR, (_e, data) => { if (data.fatal) onExpire() })
+    })
+    return () => { destroyed = true; instance?.destroy() }
+  }, [hls, url, onExpire])
+
+  return (
+    <div className="player-box">
+      <p style={{ fontSize: 13, fontWeight: 700, marginTop: 14 }}>{video.label}</p>
+      <video
+        ref={ref} src={hls ? undefined : url} controls playsInline preload="metadata" autoPlay
+        onLoadedMetadata={e => {
+          const el = e.currentTarget
+          if (resumeSec > 3 && !done && resumeSec < el.duration - 5) {
+            el.currentTime = resumeSec
+            lastSavedRef.current = resumeSec
+          }
+        }}
+        onTimeUpdate={e => save(e.currentTarget)}
+        onPause={e => save(e.currentTarget, true)}
+        onEnded={e => {
+          lastSavedRef.current = e.currentTarget.duration
+          onProgress(video.id, 100, Math.floor(e.currentTarget.duration))
+        }}
+        onError={() => { if (!hls) onExpire() }}
+      />
+    </div>
+  )
+}
+
+/** 收合列（沒點開時）——三種影片來源共用 */
+function VideoListRow({ video, progress, busy, onOpen }: {
+  video: Material
+  progress: Progress | null
+  busy: boolean
+  onOpen: () => void
+}) {
+  const done = isDone(progress)
+  const pct = progress?.pct ?? 0
+  const mins = video.duration_sec ? `${Math.floor(video.duration_sec / 60)}:${String(video.duration_sec % 60).padStart(2, '0')}` : null
+  return (
+    <button className="vrow" onClick={onOpen} disabled={busy}>
+      <span className={`ic ${done ? 'done' : 'play'}`}>{done && <IconCheck size={16} />}</span>
+      <span style={{ minWidth: 0, flex: 1 }}>
+        <b>{video.label}</b>
+        <span className="sub">
+          {busy ? '載入中…' : done ? '看完了——點了可以重看' : pct > 0 ? `看到 ${pct}%・點了從上次的地方繼續` : (mins ?? '點了開始播')}
+        </span>
+      </span>
+      <span className={`pct${done ? ' i' : ''}`}>{done ? <><IconCheck size={11} />看完</> : pct > 0 ? `${pct}%` : (mins ?? '')}</span>
+    </button>
+  )
+}
+
+function StorageVideoRow({ video, progress, onProgress }: {
+  video: Material
+  progress: Progress | null
+  onProgress: (videoId: number, pct: number, lastSec: number) => void
+}) {
+  const [url, setUrl] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+
   const open = useCallback(async () => {
     if (!video.storage_path) return
     setBusy(true); setErr(null)
@@ -116,45 +195,57 @@ function StorageVideoRow({ video, progress, onProgress }: {
     finally { setBusy(false) }
   }, [video.storage_path])
 
-  const mins = video.duration_sec ? `${Math.floor(video.duration_sec / 60)}:${String(video.duration_sec % 60).padStart(2, '0')}` : null
+  if (url) {
+    return (
+      <TrackedPlayer video={video} url={url} hls={false} done={isDone(progress)}
+        resumeSec={progress?.last_sec ?? 0} onProgress={onProgress}
+        onExpire={() => { setUrl(null); setErr('影片連線過期了——再點一次重新載入') }} />
+    )
+  }
+  return (
+    <>
+      <VideoListRow video={video} progress={progress} busy={busy} onOpen={() => void open()} />
+      {err && <p className="formerr">{err}</p>}
+    </>
+  )
+}
+
+/** Cloudflare Stream（收費課）——跟 Edge Function 換一張簽名播放憑證再播 HLS。
+ *  憑證兩小時過期，過期就回列表請學員再點一次（會換新的一張）。 */
+function CfVideoRow({ video, progress, onProgress }: {
+  video: Material
+  progress: Progress | null
+  onProgress: (videoId: number, pct: number, lastSec: number) => void
+}) {
+  const [url, setUrl] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+
+  const open = useCallback(async () => {
+    setBusy(true); setErr(null)
+    try {
+      const { data, error } = await supabase.functions.invoke('cf-stream-token', {
+        body: { video_id: video.id },
+      })
+      if (error || !data?.url) throw new Error('影片載入失敗——網路不穩，或還沒登入。重新整理後再點一次')
+      setUrl(data.url as string)
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : '影片載入失敗——再點一次重試')
+    } finally {
+      setBusy(false)
+    }
+  }, [video.id])
 
   if (url) {
     return (
-      <div className="player-box">
-        <p style={{ fontSize: 13, fontWeight: 700, marginTop: 14 }}>{video.label}</p>
-        <video
-          ref={ref} src={url} controls playsInline preload="metadata" autoPlay
-          onLoadedMetadata={e => {
-            const el = e.currentTarget
-            if (resumeSec > 3 && !done && resumeSec < el.duration - 5) {
-              el.currentTime = resumeSec
-              lastSavedRef.current = resumeSec
-            }
-          }}
-          onTimeUpdate={e => save(e.currentTarget)}
-          onPause={e => save(e.currentTarget, true)}
-          onEnded={e => {
-            lastSavedRef.current = e.currentTarget.duration
-            onProgress(video.id, 100, Math.floor(e.currentTarget.duration))
-          }}
-          onError={() => { setUrl(null); setErr('影片連線過期了——再點一次重新載入') }}
-        />
-      </div>
+      <TrackedPlayer video={video} url={url} hls done={isDone(progress)}
+        resumeSec={progress?.last_sec ?? 0} onProgress={onProgress}
+        onExpire={() => { setUrl(null); setErr('影片連線過期了——再點一次重新載入') }} />
     )
   }
-
   return (
     <>
-      <button className="vrow" onClick={() => void open()} disabled={busy}>
-        <span className={`ic ${done ? 'done' : 'play'}`}>{done && <IconCheck size={16} />}</span>
-        <span style={{ minWidth: 0, flex: 1 }}>
-          <b>{video.label}</b>
-          <span className="sub">
-            {done ? '看完了——點了可以重看' : pct > 0 ? `看到 ${pct}%・點了從上次的地方繼續` : (mins ?? '點了開始播')}
-          </span>
-        </span>
-        <span className={`pct${done ? ' i' : ''}`}>{done ? <><IconCheck size={11} />看完</> : pct > 0 ? `${pct}%` : (mins ?? '')}</span>
-      </button>
+      <VideoListRow video={video} progress={progress} busy={busy} onOpen={() => void open()} />
       {err && <p className="formerr">{err}</p>}
     </>
   )

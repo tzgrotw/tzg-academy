@@ -30,5 +30,14 @@ export function useAdminMembers() {
     setBusyId(null)
   }, [])
 
-  return { rows, loaded, q, setQ, shown, busyId, setTier }
+  const setName = useCallback(async (userId: string, name: string) => {
+    setBusyId(userId)
+    const { error } = await supabase.from('profiles').update({ name }).eq('user_id', userId)
+    setBusyId(null)
+    if (error) return error.message
+    setRows(rs => rs.map(r => r.user_id === userId ? { ...r, name } : r))
+    return null
+  }, [])
+
+  return { rows, loaded, q, setQ, shown, busyId, setTier, setName }
 }

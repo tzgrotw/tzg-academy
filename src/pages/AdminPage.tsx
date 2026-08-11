@@ -6,12 +6,14 @@ import { useAdminMembers } from '../hooks/useAdminMembers'
 import { useAdminContent } from '../hooks/useAdminContent'
 import { useAdminSubmissions } from '../hooks/useAdminSubmissions'
 import { useAdminTrash } from '../hooks/useAdminTrash'
+import { useCatalog } from '../hooks/useCatalog'
 import { supabase } from '../lib/supabase'
-import { AUDIENCE_LABEL, TIER_LABEL } from '../lib/tier'
+import { AUDIENCE_LABEL, TIER_LABEL, canAccess } from '../lib/tier'
+import { isDone, playable } from '../lib/progress'
 import { IconCheck, IconChevron, IconFileText, IconFilm, IconTrash } from '../components/icons'
 import { ConfirmProvider, useConfirm } from '../components/ConfirmDialog'
 import { commitOrder, DragHandle, SortableList, type DragHandleProps } from '../components/Sortable'
-import type { Assessment, AssessmentKind, AssessmentSubmission, Audience, Chapter, Course, Material, QuizQuestion, Reward, Section, Tier } from '../lib/types'
+import type { Assessment, AssessmentKind, AssessmentSubmission, Audience, Chapter, Course, Material, Profile, Progress, QuizQuestion, Reward, Section, Tier } from '../lib/types'
 
 // 後台——四個分頁：會員（搜尋＋一鍵改身分）、課程（課程列表 → 點進去看該課的章節/教材/測驗）、作業批改、垃圾桶。
 // 課程結構跟課程設定分開兩塊；排序用拖曳（SortableList）；刪除都走 ConfirmDialog 確認，砍下去是軟刪除
@@ -20,7 +22,7 @@ import type { Assessment, AssessmentKind, AssessmentSubmission, Audience, Chapte
 
 export function AdminPage() {
   const { profile, loading } = useAuth()
-  const [tab, setTab] = useState<'members' | 'content' | 'grading' | 'trash'>('members')
+  const [tab, setTab] = useState<'members' | 'content' | 'grading' | 'trash' | 'guide'>('members')
 
   if (loading) return <Page><div className="wrap"><div className="skel" style={{ marginTop: 40 }} /></div></Page>
   if (profile?.tier !== 'admin') return <Navigate to="/" replace />
@@ -36,20 +38,97 @@ export function AdminPage() {
               <button className={tab === 'content' ? 'on' : ''} onClick={() => setTab('content')}>課程</button>
               <button className={tab === 'grading' ? 'on' : ''} onClick={() => setTab('grading')}>作業批改</button>
               <button className={tab === 'trash' ? 'on' : ''} onClick={() => setTab('trash')}>垃圾桶</button>
+              <button className={tab === 'guide' ? 'on' : ''} onClick={() => setTab('guide')}>使用說明</button>
             </div>
           </div>
           {tab === 'members' ? <MembersTab /> : tab === 'content' ? <ContentTab />
-            : tab === 'grading' ? <GradingTab /> : <TrashTab />}
+            : tab === 'grading' ? <GradingTab /> : tab === 'trash' ? <TrashTab /> : <GuideTab />}
         </div>
       </Page>
     </ConfirmProvider>
   )
 }
 
+/* ───────────────────────── 使用說明（交接手冊）───────────────────────── */
+
+function GuideTab() {
+  const S = ({ title, children }: { title: string; children: React.ReactNode }) => (
+    <div className="curr-section">
+      <div className="curr-section-hd"><h4>{title}</h4></div>
+      <div style={{ fontSize: 13.5, lineHeight: 1.9, color: 'var(--tx-soft)' }}>{children}</div>
+    </div>
+  )
+  return (
+    <div className="acard">
+      <h3>平台使用說明（交接手冊）</h3>
+      <p className="muted" style={{ fontSize: 13, marginTop: 6 }}>
+        給接手管理這個平台的人看的——整個學院的遊戲規則都在這一頁。
+      </p>
+
+      <S title="會員身分（三級）">
+        <p><b>會員</b>：免費註冊就有，看得到「公開」跟「會員課程」。<b>代理</b>：再多看「代理專屬」課。<b>管理員</b>：進得來這個後台。
+        改身分：後台「會員」分頁 → 點開該會員 → 按「改成◯◯」。沒有金流串接，開通身分目前是人工作業。</p>
+      </S>
+
+      <S title="課程結構">
+        <p>一門<b>課程</b>底下有很多<b>章節</b>；每一章裡面可以放三種東西：<b>小節內文</b>（條列重點＋講師提醒）、<b>教材</b>（影片或講義 PDF）、<b>測驗／作業</b>。
+        每一層都可以拖曳「⠿」把手排順序、可以停用（學員暫時看不到、資料還在）、可以刪除（先進垃圾桶）。
+        課程有「觀看對象」設定（公開／會員／代理），鎖的是內容，課名跟封面所有人都看得到（招生用）。</p>
+      </S>
+
+      <S title="影片與講義">
+        <p>影片三種來源，照「這支影片要不要收費」選：
+        <b>免費／招生課 → YouTube</b>：影片設「不公開」（不要「私人」），貼網址進後台即可，零成本。
+        <b>收費課 → Cloudflare Stream</b>：影片傳到 Cloudflare 後台，把影片 ID 貼進「＋加 Cloudflare 影片」。播放走簽名憑證，
+        學員把連結傳出去也播不了，還會自動依網速調畫質（手機看最順）。設定步驟見 <code>docs/cloudflare-stream-setup.md</code>。
+        <b>零星檔案 → 後台直接上傳</b>：存自己空間，量大會吃流量費，當備用就好。
+        講義上傳 PDF，學員在頁面內建的閱讀器直接看。教材名稱、YouTube／Cloudflare 影片 ID 都可以事後在教材列上直接改。</p>
+      </S>
+
+      <S title="進度怎麼算">
+        <p>自家上傳跟 Cloudflare 的影片：看到 95% 自動算看完，中途關掉會記住看到哪、下次接著播。
+        YouTube 影片：技術上抓不到播放進度，學員看完自己按「看完了・標記這支」。講義不算進度。</p>
+      </S>
+
+      <S title="測驗與作業的規則">
+        <p><b>測驗</b>（選擇題）：在章節裡按「＋加測驗」，逐題設定選項並圈選正確答案、設定及格 %。
+        學員送出後系統自動評分；沒過可以重考，成績以最新一次為準。正確答案存在資料庫端，學員從瀏覽器看不到。
+        <b>作業</b>：按「＋加作業」，寫清楚要交什麼。學員上傳檔案（可附說明）後進「作業批改」分頁排隊，
+        管理員看檔案 → 寫評語 →「通過」或「退回」。被退回的學員會看到評語，可以重交。</p>
+      </S>
+
+      <S title="修畢、里程碑與證書">
+        <p>一章算修完 ＝ 該章影片全部看完 <b>而且</b> 該章的測驗／作業全部「通過」（待批改不算）。
+        整門課修完 ＝ 每一章都修完 → 學員拿到<b>結業證書</b>。
+        證書的名稱跟文案在「課程」分頁 → 點進該課 → 最下面「里程碑與證書」設定；同一區也可以加<b>章節里程碑</b>（完成某一章就跳出的獎勵訊息），一門課可以放很多個。
+        學員在「我的學習」頁看得到自己拿到的所有獎章跟證書。</p>
+      </S>
+
+      <S title="誤刪救援（垃圾桶）">
+        <p>後台按刪除都是先丟進「垃圾桶」分頁，不是真的消失——點「還原」整個救回來（連底下的章節教材一起）。
+        在垃圾桶裡再按一次刪除才是永久刪除，那就真的救不回來了。</p>
+      </S>
+
+      <S title="每個月要記得的事">
+        <p>目前沒有自動金流——會員匯款／購課後，要人工到後台把她的身分改成對應等級。
+        新課上線前用一個測試會員帳號自己走一遍：看影片 → 做測驗 → 交作業 → 批改 → 確認證書會跳出來。
+        資料庫結構有更動時（工程師會說），把 <code>supabase/schema.sql</code> 整份貼到 Supabase SQL Editor 重跑一次即可，重複執行是安全的。</p>
+      </S>
+    </div>
+  )
+}
+
 /* ───────────────────────── 會員 ───────────────────────── */
 
 function MembersTab() {
-  const { rows, loaded, q, setQ, shown, busyId, setTier } = useAdminMembers()
+  const members = useAdminMembers()
+  const { rows, loaded, q, setQ, shown } = members
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+
+  const selected = rows.find(p => p.user_id === selectedId) ?? null
+  if (selected) {
+    return <MemberDetail member={selected} members={members} onBack={() => setSelectedId(null)} />
+  }
 
   return (
     <div className="acard">
@@ -60,18 +139,143 @@ function MembersTab() {
       {!loaded && <div className="skel" />}
       {loaded && shown.length === 0 && <p className="muted" style={{ marginTop: 16, fontSize: 13 }}>沒有符合的會員。</p>}
       {shown.map(p => (
-        <div className="arow" key={p.user_id}>
+        <div className="arow" key={p.user_id} style={{ cursor: 'pointer' }} onClick={() => setSelectedId(p.user_id)}>
           <div className="grow">
             <b>{p.name || '（沒填名字）'}</b>
             <span className="sub">{p.email}・{new Date(p.created_at).toLocaleDateString('zh-TW')} 加入</span>
           </div>
           <span className={`tierchip ${p.tier}`}>{TIER_LABEL[p.tier]}</span>
-          {(['member', 'agent', 'admin'] as Tier[]).filter(t => t !== p.tier).map(t => (
-            <button key={t} className="btn-line" disabled={busyId === p.user_id}
-              onClick={() => void setTier(p, t)}>改成{TIER_LABEL[t]}</button>
-          ))}
+          <span style={{ color: 'var(--tx-muted)' }}><IconChevron size={15} /></span>
         </div>
       ))}
+    </div>
+  )
+}
+
+/** 會員詳細頁——改名字、改身分、看她每門課的進度跟測驗/作業狀況。
+ *  進度資料靠 progress_admin_read RLS（管理員唯讀）；筆記是私人的，後台看不到。 */
+function MemberDetail({ member, members, onBack }: {
+  member: Profile
+  members: ReturnType<typeof useAdminMembers>
+  onBack: () => void
+}) {
+  const cat = useCatalog()
+  const [name, setName] = useState(member.name)
+  const [err, setErr] = useState<string | null>(null)
+  const [progRows, setProgRows] = useState<Progress[]>([])
+  const [subRows, setSubRows] = useState<AssessmentSubmission[]>([])
+  const [dataLoaded, setDataLoaded] = useState(false)
+
+  useEffect(() => {
+    let alive = true
+    setDataLoaded(false)
+    Promise.all([
+      supabase.from('video_progress').select('*').eq('user_id', member.user_id),
+      supabase.from('assessment_submissions').select('*').eq('user_id', member.user_id),
+    ]).then(([p, s]) => {
+      if (!alive) return
+      setProgRows((p.data as Progress[] | null) ?? [])
+      setSubRows((s.data as AssessmentSubmission[] | null) ?? [])
+      setDataLoaded(true)
+    })
+    return () => { alive = false }
+  }, [member.user_id])
+
+  const progOf = (videoId: number) => progRows.find(r => r.video_id === videoId) ?? null
+  const subOf = (assessmentId: number) => subRows.find(r => r.assessment_id === assessmentId) ?? null
+
+  async function saveName() {
+    setErr(await members.setName(member.user_id, name.trim()))
+  }
+
+  const courseRows = cat.courses
+    .filter(c => canAccess(c.audience, member.tier))
+    .sort((a, b) => a.sort_no - b.sort_no || a.id - b.id)
+    .map(course => {
+      const chapters = cat.chaptersOf(course.id)
+      const keys = new Set(chapters.map(c => c.key))
+      const vids = playable(cat.materials.filter(m => keys.has(m.chapter_key)))
+      const vidsDone = vids.filter(v => isDone(progOf(v.id))).length
+      const assessments = cat.assessments.filter(a => keys.has(a.chapter_key) && a.is_active)
+      const passed = assessments.filter(a => subOf(a.id)?.status === 'passed').length
+      return { course, vids, vidsDone, assessments, passed }
+    })
+
+  return (
+    <div className="acard">
+      <button className="curr-back" onClick={onBack}>
+        <span style={{ transform: 'rotate(180deg)', display: 'inline-flex' }}><IconChevron size={14} /></span>回會員列表
+      </button>
+
+      <div className="curr-section" style={{ marginTop: 0 }}>
+        <div className="curr-section-hd"><h4>基本資料</h4></div>
+        <div className="inline-form" style={{ marginTop: 0 }}>
+          <input value={name} onChange={e => setName(e.target.value)} placeholder="名字" style={{ minWidth: 180 }} />
+          {name.trim() !== member.name && (
+            <button className="btn btn-s" disabled={members.busyId === member.user_id} onClick={() => void saveName()}>存</button>
+          )}
+          <span className="sub" style={{ alignSelf: 'center' }}>{member.email}・{new Date(member.created_at).toLocaleDateString('zh-TW')} 加入</span>
+        </div>
+        <div className="inline-form">
+          <span className={`tierchip ${member.tier}`} style={{ alignSelf: 'center' }}>{TIER_LABEL[member.tier]}</span>
+          {(['member', 'agent', 'admin'] as Tier[]).filter(t => t !== member.tier).map(t => (
+            <button key={t} className="btn-line" disabled={members.busyId === member.user_id}
+              onClick={() => void members.setTier(member, t)}>改成{TIER_LABEL[t]}</button>
+          ))}
+        </div>
+        {err && <p className="formerr">{err}</p>}
+      </div>
+
+      <div className="curr-section">
+        <div className="curr-section-hd"><h4>學習狀況</h4></div>
+        {(!dataLoaded || !cat.loaded) && <div className="skel" />}
+        {dataLoaded && cat.loaded && courseRows.length === 0 && (
+          <p className="muted" style={{ fontSize: 13 }}>這個身分目前沒有可上的課程。</p>
+        )}
+        {dataLoaded && cat.loaded && courseRows.map(({ course, vids, vidsDone, assessments, passed }) => (
+          <div className="arow" key={course.id}>
+            <div className="grow">
+              <b style={{ fontSize: 13.5 }}>{course.title}</b>
+              <span className="sub">
+                {vids.length === 0 && assessments.length === 0 && '（課程還沒有內容）'}
+                {vids.length > 0 && `影片 ${vidsDone}/${vids.length}`}
+                {assessments.length > 0 && `${vids.length > 0 ? '・' : ''}測驗／作業 ${passed}/${assessments.length} 過關`}
+              </span>
+              {vids.length > 0 && (
+                <div className="prog" style={{ marginTop: 6, maxWidth: 260 }}>
+                  <i style={{ width: `${Math.round((vidsDone / vids.length) * 100)}%` }} />
+                </div>
+              )}
+            </div>
+            {vids.length > 0 && vidsDone === vids.length && (assessments.length === 0 || passed === assessments.length) && (
+              <span className="statuschip passed">修畢</span>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {dataLoaded && subRows.length > 0 && (
+        <div className="curr-section">
+          <div className="curr-section-hd"><h4>測驗／作業紀錄（{subRows.length}）</h4></div>
+          {subRows.map(s => {
+            const a = cat.assessments.find(x => x.id === s.assessment_id)
+            return (
+              <div className="arow" key={s.assessment_id}>
+                <div className="grow">
+                  <b style={{ fontSize: 13 }}>{a?.title ?? '（已刪除的測驗／作業）'}</b>
+                  <span className="sub">
+                    {new Date(s.submitted_at).toLocaleString('zh-TW')} 繳交
+                    {s.score_pct != null && `・${s.score_pct} 分`}
+                  </span>
+                </div>
+                <span className={`statuschip ${s.status}`}>
+                  {s.status === 'passed' ? '通過' : s.status === 'pending' ? '待批改' : '未過'}
+                </span>
+              </div>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }
@@ -338,6 +542,15 @@ function ChapterCard({ chapter, handle, content, confirm }: {
 
   const [ytUrl, setYtUrl] = useState('')
   const [ytLabel, setYtLabel] = useState('')
+  const [cfUrl, setCfUrl] = useState('')
+  const [cfLabel, setCfLabel] = useState('')
+  async function addCf() {
+    setBusy(true); setErr(null)
+    const e = await content.addCfMaterial(chapter.key, cfUrl, cfLabel, materials.at(-1)?.sort_no ?? 0)
+    setErr(e)
+    if (!e) { setCfUrl(''); setCfLabel('') }
+    setBusy(false)
+  }
   async function addYoutube() {
     setBusy(true); setErr(null)
     const e = await content.addYoutubeMaterial(chapter.key, ytUrl, ytLabel, materials.at(-1)?.sort_no ?? 0)
@@ -447,6 +660,7 @@ function ChapterCard({ chapter, handle, content, confirm }: {
                 onToggle={() => content.toggleMaterial(m)}
                 onRename={label => content.updateMaterial(m.id, { label })}
                 onRenameYoutube={urlOrId => content.updateMaterialYoutubeId(m.id, urlOrId)}
+                onRenameCf={urlOrId => content.updateMaterialCfId(m.id, urlOrId)}
                 onDelete={() => void deleteMaterial(m)} />
             )}
           </SortableList>
@@ -468,6 +682,11 @@ function ChapterCard({ chapter, handle, content, confirm }: {
             <input value={ytUrl} onChange={e => setYtUrl(e.target.value)} placeholder="貼 YouTube 網址或影片 ID" style={{ minWidth: 220 }} />
             <input value={ytLabel} onChange={e => setYtLabel(e.target.value)} placeholder="這支影片的標題" style={{ flex: 1, minWidth: 180 }} />
             <button className="btn-line" disabled={busy || !ytUrl.trim()} onClick={() => void addYoutube()}>＋加 YouTube 影片</button>
+          </div>
+          <div className="inline-form" style={{ marginTop: 10 }}>
+            <input value={cfUrl} onChange={e => setCfUrl(e.target.value)} placeholder="貼 Cloudflare 影片 ID 或網址（收費課用）" style={{ minWidth: 220 }} />
+            <input value={cfLabel} onChange={e => setCfLabel(e.target.value)} placeholder="這支影片的標題" style={{ flex: 1, minWidth: 180 }} />
+            <button className="btn-line" disabled={busy || !cfUrl.trim()} onClick={() => void addCf()}>＋加 Cloudflare 影片</button>
           </div>
           {err && <p className="formerr">{err}</p>}
 
@@ -717,20 +936,23 @@ function SectionEditor({ section, handle, onToggle, onDelete }: {
   )
 }
 
-function MaterialAdminRow({ material, handle, onToggle, onRename, onRenameYoutube, onDelete }: {
+function MaterialAdminRow({ material, handle, onToggle, onRename, onRenameYoutube, onRenameCf, onDelete }: {
   material: Material
   handle: DragHandleProps
   onToggle: () => Promise<string | null>
   onRename: (label: string) => Promise<string | null>
   onRenameYoutube: (urlOrId: string) => Promise<string | null>
+  onRenameCf: (urlOrId: string) => Promise<string | null>
   onDelete: () => void
 }) {
   const [label, setLabel] = useState(material.label)
   const [ytId, setYtId] = useState(material.youtube_id ?? '')
+  const [cfId, setCfId] = useState(material.cf_stream_id ?? '')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const labelDirty = label.trim() !== '' && label.trim() !== material.label
   const ytDirty = ytId.trim() !== '' && ytId.trim() !== material.youtube_id
+  const cfDirty = cfId.trim() !== '' && cfId.trim() !== material.cf_stream_id
 
   async function toggle() {
     setBusy(true)
@@ -747,6 +969,13 @@ function MaterialAdminRow({ material, handle, onToggle, onRename, onRenameYoutub
   async function renameYoutube() {
     setBusy(true); setErr(null)
     const e = await onRenameYoutube(ytId.trim())
+    setErr(e)
+    setBusy(false)
+  }
+
+  async function renameCf() {
+    setBusy(true); setErr(null)
+    const e = await onRenameCf(cfId.trim())
     setErr(e)
     setBusy(false)
   }
@@ -771,6 +1000,14 @@ function MaterialAdminRow({ material, handle, onToggle, onRename, onRenameYoutub
           <input value={ytId} onChange={e => setYtId(e.target.value)} placeholder="貼新的 YouTube 網址或影片 ID"
             style={{ flex: 1, minWidth: 140, border: '1px solid rgba(197,179,130,.4)', borderRadius: 8, padding: '5px 10px', font: 'inherit', fontSize: 12.5, background: '#FFFDF7' }} />
           {ytDirty && <button className="btn btn-s" disabled={busy} onClick={() => void renameYoutube()}>存</button>}
+        </div>
+      )}
+      {material.cf_stream_id && (
+        <div style={{ display: 'flex', gap: 8, width: '100%', alignItems: 'center', marginLeft: 24 }}>
+          <span className="sub" style={{ flex: 'none' }}>Cloudflare 影片</span>
+          <input value={cfId} onChange={e => setCfId(e.target.value)} placeholder="貼新的 Cloudflare 影片 ID 或網址"
+            style={{ flex: 1, minWidth: 140, border: '1px solid rgba(197,179,130,.4)', borderRadius: 8, padding: '5px 10px', font: 'inherit', fontSize: 12.5, background: '#FFFDF7' }} />
+          {cfDirty && <button className="btn btn-s" disabled={busy} onClick={() => void renameCf()}>存</button>}
         </div>
       )}
       {err && <p className="formerr" style={{ width: '100%', margin: 0 }}>{err}</p>}
