@@ -17,6 +17,12 @@ body { background: var(--paper); color: var(--tx); font-family: "PingFang TC","N
 img { max-width: 100%; }
 a { color: inherit; }
 button { font-family: inherit; }
+:focus-visible { outline: 3px solid var(--magenta); outline-offset: 3px; }
+.skip-link { position: fixed; top: 8px; left: 8px; z-index: 1000; background: #fff; color: var(--ink); padding: 10px 14px; border-radius: 8px; transform: translateY(-160%); }
+.skip-link:focus { transform: translateY(0); }
+.route-loading { min-height: 50vh; display: grid; place-items: center; color: var(--tx-muted); }
+.load-error { margin-top: 20px; padding: 18px 20px; border: 1px solid #B3261E; border-radius: 14px; background: #FDF0F3; color: #761611; }
+.load-error p { margin: 6px 0 12px; font-size: 13px; line-height: 1.6; }
 .serif { font-family: "Noto Serif TC","Songti TC","PMingLiU",serif; }
 .wrap { max-width: 1080px; margin: 0 auto; padding: 0 20px; }
 
@@ -41,6 +47,16 @@ button { font-family: inherit; }
 .nav .links { margin-left: auto; display: flex; align-items: center; gap: 18px; }
 .nav .links a { color: var(--tx-soft); font-size: 13.5px; text-decoration: none; }
 .nav .links a:hover { color: var(--magenta); }
+@media (max-width: 640px) {
+  .nav .links { gap: 8px; }
+  .nav .logo { min-height: 44px; justify-content: center; }
+  .nav .links a, .nav .links button { min-width: 44px; min-height: 44px; display: inline-flex; align-items: center; justify-content: center; padding-left: 8px; padding-right: 8px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}
 
 /* ── 首頁 ── */
 .hero { position: relative; overflow: hidden; background: var(--ink); }

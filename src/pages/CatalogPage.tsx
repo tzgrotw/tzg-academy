@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Page } from '../components/Shell'
 import { CourseCard } from '../components/CourseCard'
 import { useCatalog } from '../hooks/useCatalog'
+import { CatalogError } from '../components/CatalogError'
 import type { Audience } from '../lib/types'
 
 // 全部課程＝學員選課的家（老闆 2026-08-05：「應該還有一個首頁我可以選擇課程用的」）
@@ -32,7 +33,8 @@ export function CatalogPage() {
       </div>
       <div className="wrap catgrid">
         {!cat.loaded && <div className="skel" />}
-        {cat.loaded && shown.length === 0 && (
+        {cat.loaded && cat.error && <CatalogError message={cat.error} retry={cat.reload} />}
+        {cat.loaded && !cat.error && shown.length === 0 && (
           <p className="muted" style={{ marginTop: 28 }}>這一類還沒有課——換個分類看看。</p>
         )}
         <div className="grid">

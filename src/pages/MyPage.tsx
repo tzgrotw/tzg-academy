@@ -7,6 +7,7 @@ import { useSubmissions } from '../hooks/useSubmissions'
 import { canAccess, TIER_LABEL } from '../lib/tier'
 import { isDone, nextToWatch, playable } from '../lib/progress'
 import { IconAward, IconCheck, IconClipboard, IconFilm } from '../components/icons'
+import { CatalogError } from '../components/CatalogError'
 
 // 我的學習——學員自己的儀表板：我的課、每門課看到哪、測驗/作業過了沒、拿到哪些里程碑跟證書。
 // 資料全部來自既有的 hooks（catalog + progress + submissions），這一頁只做彙整呈現。
@@ -72,8 +73,9 @@ export function MyPage() {
         </div>
 
         {loading && <div className="skel" style={{ marginTop: 24 }} />}
+        {!loading && cat.error && <CatalogError message={cat.error} retry={cat.reload} />}
 
-        {!loading && (
+        {!loading && !cat.error && (
           <>
             {(certsEarned.length > 0 || allMilestones.length > 0) && (
               <div className="acard">

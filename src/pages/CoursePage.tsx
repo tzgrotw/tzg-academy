@@ -7,6 +7,7 @@ import { useAuth } from '../hooks/useAuth'
 import { canAccess, AUDIENCE_LABEL, lockHint } from '../lib/tier'
 import { countProgress, isDone, nextToWatch, playable } from '../lib/progress'
 import { IconAward, IconCheck, IconLock } from '../components/icons'
+import { CatalogError } from '../components/CatalogError'
 
 // 課程介紹頁——封面 hero＋唯一下一步 CTA＋章節大綱＋里程碑。
 // 不登入也看得到這一頁（招生用）；內容（教材列）由 RLS 決定撈不撈得到。
@@ -22,6 +23,10 @@ export function CoursePage() {
 
   const course = cat.courses.find(c => c.id === courseId) ?? null
   const loading = !cat.loaded || authLoading || (!!userId && (!progLoaded || !subLoaded))
+
+  if (cat.loaded && cat.error) {
+    return <Page><div className="wrap"><CatalogError message={cat.error} retry={cat.reload} /></div></Page>
+  }
 
   if (cat.loaded && !course) {
     return <Page><div className="wrap"><div className="locknote"><h3>找不到這門課</h3>
