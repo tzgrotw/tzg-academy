@@ -9,6 +9,7 @@ const LearnPage = lazy(() => import('./pages/LearnPage').then(m => ({ default: m
 const AuthPage = lazy(() => import('./pages/AuthPage').then(m => ({ default: m.AuthPage })))
 const AdminPage = lazy(() => import('./pages/AdminPage').then(m => ({ default: m.AdminPage })))
 const MyPage = lazy(() => import('./pages/MyPage').then(m => ({ default: m.MyPage })))
+const CertificatePage = lazy(() => import('./pages/CertificatePage').then(m => ({ default: m.CertificatePage })))
 
 export function App() {
   return (
@@ -20,6 +21,7 @@ export function App() {
           <Route path="/course/:id" element={<CoursePage />} />
           <Route path="/learn/:chapterKey" element={<LearnPage />} />
           <Route path="/my" element={<MyPage />} />
+          <Route path="/certificate/:code" element={<CertificatePage />} />
           <Route path="/login" element={<AuthPage mode="login" />} />
           <Route path="/register" element={<AuthPage mode="register" />} />
           <Route path="/admin" element={<AdminPage />} />

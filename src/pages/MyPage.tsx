@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { Link, Navigate, useNavigate } from 'react-router-dom'
 import { Page } from '../components/Shell'
 import { useAuth } from '../hooks/useAuth'
@@ -8,6 +9,7 @@ import { canAccess, TIER_LABEL } from '../lib/tier'
 import { isDone, nextToWatch, playable } from '../lib/progress'
 import { IconAward, IconCheck, IconClipboard, IconFilm } from '../components/icons'
 import { CatalogError } from '../components/CatalogError'
+import { useCertificates } from '../hooks/useCertificates'
 
 // 我的學習——學員自己的儀表板：我的課、每門課看到哪、測驗/作業過了沒、拿到哪些里程碑跟證書。
 // 資料全部來自既有的 hooks（catalog + progress + submissions），這一頁只做彙整呈現。
@@ -17,10 +19,13 @@ export function MyPage() {
   const cat = useCatalog()
   const { progressOf, loaded: progLoaded } = useProgress(userId)
   const { submissionOf, loaded: subLoaded } = useSubmissions(userId)
+  const certificates = useCertificates(userId)
+  const [issuingCourse, setIssuingCourse] = useState<number | null>(null)
+  const [certificateError, setCertificateError] = useState<string | null>(null)
 
   if (!authLoading && !userId) return <Navigate to="/login" replace />
 
-  const loading = authLoading || !cat.loaded || !progLoaded || !subLoaded
+  const loading = authLoading || !cat.loaded || !progLoaded || !subLoaded || !certificates.loaded
   const tier = profile?.tier ?? null
 
   const myCourses = cat.courses
@@ -64,6 +69,16 @@ export function MyPage() {
   const allMilestones = summaries.flatMap(({ course, s }) =>
     s.milestonesEarned.map(m => ({ course, milestone: m })))
 
+  async function openCertificate(courseId: number) {
+    const existing = certificates.rows.find(c => c.course_id === courseId)
+    if (existing) { navigate(`/certificate/${existing.verification_code}`); return }
+    setIssuingCourse(courseId); setCertificateError(null)
+    const { certificate, error } = await certificates.issue(courseId)
+    setIssuingCourse(null)
+    if (error || !certificate) { setCertificateError(error ?? '證書核發失敗'); return }
+    navigate(`/certificate/${certificate.verification_code}`)
+  }
+
   return (
     <Page>
       <div className="wrap" style={{ paddingBottom: 90 }}>
@@ -80,11 +95,16 @@ export function MyPage() {
             {(certsEarned.length > 0 || allMilestones.length > 0) && (
               <div className="acard">
                 <h3 className="i"><IconAward size={17} />我的獎章與證書（{certsEarned.length + allMilestones.length}）</h3>
+                {certificateError && <p className="formerr" role="alert">{certificateError}</p>}
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 14 }}>
                   {certsEarned.map(({ course, s }) => (
-                    <div key={`cert-${course.id}`} className="cert" style={{ background: 'linear-gradient(135deg,#FCF8EC,#F4ECD6)', border: '1px solid var(--gold)', borderRadius: 14, padding: '14px 18px' }}>
+                    <div key={`cert-${course.id}`} className="cert formal-cert-card">
                       <b style={{ color: 'var(--gold-deep)', fontSize: 13.5, letterSpacing: '.08em' }}>{s.cert!.title}</b>
                       <p style={{ fontSize: 12, color: 'var(--tx-muted)', marginTop: 4 }}>{course.title}・修畢證書</p>
+                      <button className="btn-line" disabled={issuingCourse === course.id}
+                        onClick={() => void openCertificate(course.id)}>
+                        {issuingCourse === course.id ? '核發中…' : certificates.rows.some(c => c.course_id === course.id) ? '查看／下載證書' : '核發正式證書'}
+                      </button>
                     </div>
                   ))}
                   {allMilestones.map(({ course, milestone }) => (
