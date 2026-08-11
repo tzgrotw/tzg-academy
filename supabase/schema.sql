@@ -71,10 +71,9 @@ CREATE TABLE IF NOT EXISTS public.courses (
 -- 舊資料庫補這欄（軟刪除——後台誤刪可以從垃圾桶救回來，不是馬上真的砍掉）
 ALTER TABLE public.courses ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
 ALTER TABLE public.courses ENABLE ROW LEVEL SECURITY;
-DO $$ BEGIN
-  CREATE POLICY courses_read ON public.courses FOR SELECT
-    USING (is_active OR public.fn_is_admin());
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DROP POLICY IF EXISTS courses_read ON public.courses;
+CREATE POLICY courses_read ON public.courses FOR SELECT
+  USING ((is_active AND deleted_at IS NULL) OR public.fn_is_admin());
 DO $$ BEGIN
   CREATE POLICY courses_admin ON public.courses FOR ALL TO authenticated
     USING (public.fn_is_admin()) WITH CHECK (public.fn_is_admin());
@@ -94,10 +93,12 @@ CREATE TABLE IF NOT EXISTS public.course_chapters (
 );
 ALTER TABLE public.course_chapters ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
 ALTER TABLE public.course_chapters ENABLE ROW LEVEL SECURITY;
-DO $$ BEGIN
-  CREATE POLICY chapters_read ON public.course_chapters FOR SELECT
-    USING (is_active OR public.fn_is_admin());
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DROP POLICY IF EXISTS chapters_read ON public.course_chapters;
+CREATE POLICY chapters_read ON public.course_chapters FOR SELECT
+  USING ((is_active AND deleted_at IS NULL AND EXISTS (
+    SELECT 1 FROM public.courses c
+    WHERE c.id = course_chapters.course_id AND c.is_active AND c.deleted_at IS NULL
+  )) OR public.fn_is_admin());
 DO $$ BEGIN
   CREATE POLICY chapters_admin ON public.course_chapters FOR ALL TO authenticated
     USING (public.fn_is_admin()) WITH CHECK (public.fn_is_admin());
@@ -108,6 +109,7 @@ CREATE OR REPLACE FUNCTION public.fn_can_access_course(p_course BIGINT)
 RETURNS BOOLEAN LANGUAGE sql SECURITY DEFINER SET search_path = public AS $$
   SELECT CASE
     WHEN public.fn_is_admin() THEN true
+    WHEN NOT c.is_active OR c.deleted_at IS NOT NULL THEN false
     WHEN c.audience = 'public' THEN true
     WHEN c.audience = 'member' THEN public.fn_my_tier() IN ('member','agent')
     WHEN c.audience = 'agent'  THEN public.fn_my_tier() = 'agent'
@@ -117,7 +119,7 @@ $$;
 
 CREATE OR REPLACE FUNCTION public.fn_can_access_chapter(p_key TEXT)
 RETURNS BOOLEAN LANGUAGE sql SECURITY DEFINER SET search_path = public AS $$
-  SELECT public.fn_can_access_course(ch.course_id)
+  SELECT ch.is_active AND ch.deleted_at IS NULL AND public.fn_can_access_course(ch.course_id)
   FROM public.course_chapters ch WHERE ch.key = p_key
 $$;
 
@@ -164,10 +166,9 @@ ALTER TABLE public.course_videos ADD COLUMN IF NOT EXISTS youtube_id TEXT;
 ALTER TABLE public.course_videos ADD COLUMN IF NOT EXISTS cf_stream_id TEXT;
 ALTER TABLE public.course_videos ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
 ALTER TABLE public.course_videos ENABLE ROW LEVEL SECURITY;
-DO $$ BEGIN
-  CREATE POLICY videos_read ON public.course_videos FOR SELECT
-    USING ((is_active AND public.fn_can_access_chapter(chapter_key)) OR public.fn_is_admin());
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DROP POLICY IF EXISTS videos_read ON public.course_videos;
+CREATE POLICY videos_read ON public.course_videos FOR SELECT
+  USING ((is_active AND deleted_at IS NULL AND public.fn_can_access_chapter(chapter_key)) OR public.fn_is_admin());
 DO $$ BEGIN
   CREATE POLICY videos_admin ON public.course_videos FOR ALL TO authenticated
     USING (public.fn_is_admin()) WITH CHECK (public.fn_is_admin());
@@ -190,10 +191,9 @@ CREATE TABLE IF NOT EXISTS public.course_assessments (
 );
 ALTER TABLE public.course_assessments ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
 ALTER TABLE public.course_assessments ENABLE ROW LEVEL SECURITY;
-DO $$ BEGIN
-  CREATE POLICY assessments_read ON public.course_assessments FOR SELECT
-    USING ((is_active AND public.fn_can_access_chapter(chapter_key)) OR public.fn_is_admin());
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DROP POLICY IF EXISTS assessments_read ON public.course_assessments;
+CREATE POLICY assessments_read ON public.course_assessments FOR SELECT
+  USING ((is_active AND deleted_at IS NULL AND public.fn_can_access_chapter(chapter_key)) OR public.fn_is_admin());
 DO $$ BEGIN
   CREATE POLICY assessments_admin ON public.course_assessments FOR ALL TO authenticated
     USING (public.fn_is_admin()) WITH CHECK (public.fn_is_admin());
@@ -225,6 +225,8 @@ LANGUAGE sql SECURITY DEFINER SET search_path = public AS $$
   FROM public.quiz_questions q
   JOIN public.course_assessments a ON a.id = q.assessment_id
   WHERE q.assessment_id = p_assessment_id
+    AND a.is_active
+    AND a.deleted_at IS NULL
     AND (public.fn_can_access_chapter(a.chapter_key) OR public.fn_is_admin())
   ORDER BY q.sort_no
 $$;
@@ -241,6 +243,7 @@ BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM public.course_assessments a
     WHERE a.id = p_assessment_id AND a.kind = 'quiz'
+      AND a.is_active AND a.deleted_at IS NULL
       AND (public.fn_can_access_chapter(a.chapter_key) OR public.fn_is_admin())
   ) THEN
     RAISE EXCEPTION '沒有這份測驗，或沒有權限';
@@ -273,6 +276,7 @@ BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM public.course_assessments a
     WHERE a.id = p_assessment_id AND a.kind = 'assignment'
+      AND a.is_active AND a.deleted_at IS NULL
       AND (public.fn_can_access_chapter(a.chapter_key) OR public.fn_is_admin())
   ) THEN
     RAISE EXCEPTION '沒有這份作業，或沒有權限';
@@ -330,17 +334,30 @@ EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 CREATE TABLE IF NOT EXISTS public.video_progress (
   user_id UUID NOT NULL DEFAULT auth.uid() REFERENCES auth.users(id) ON DELETE CASCADE,
   video_id BIGINT NOT NULL REFERENCES public.course_videos(id) ON DELETE CASCADE,
-  pct INT NOT NULL DEFAULT 0,
-  last_sec INT NOT NULL DEFAULT 0,
+  pct INT NOT NULL DEFAULT 0 CHECK (pct BETWEEN 0 AND 100),
+  last_sec INT NOT NULL DEFAULT 0 CHECK (last_sec >= 0),
   completed_at TIMESTAMPTZ,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   PRIMARY KEY (user_id, video_id)
 );
 ALTER TABLE public.video_progress ENABLE ROW LEVEL SECURITY;
-DO $$ BEGIN
-  CREATE POLICY progress_own ON public.video_progress FOR ALL TO authenticated
-    USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid());
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+-- 進度只能寫到本人有權觀看、且仍上架的影片；避免跨課程偽造進度。
+-- 舊專案可能已有同名 policy，這裡明確重建，確保重跑 schema 會套用最新版守門規則。
+DROP POLICY IF EXISTS progress_own ON public.video_progress;
+CREATE POLICY progress_own ON public.video_progress FOR ALL TO authenticated
+  USING (user_id = auth.uid())
+  WITH CHECK (
+    user_id = auth.uid()
+    AND pct BETWEEN 0 AND 100
+    AND last_sec >= 0
+    AND EXISTS (
+      SELECT 1 FROM public.course_videos v
+      WHERE v.id = video_id
+        AND v.is_active
+        AND v.deleted_at IS NULL
+        AND public.fn_can_access_chapter(v.chapter_key)
+    )
+  );
 -- 管理員看得到大家的進度（後台會員詳細頁用）——只能看，寫入還是只有本人
 DO $$ BEGIN
   CREATE POLICY progress_admin_read ON public.video_progress FOR SELECT TO authenticated
@@ -371,9 +388,13 @@ CREATE TABLE IF NOT EXISTS public.course_rewards (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 ALTER TABLE public.course_rewards ENABLE ROW LEVEL SECURITY;
-DO $$ BEGIN
-  CREATE POLICY rewards_read ON public.course_rewards FOR SELECT USING (true);
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DROP POLICY IF EXISTS rewards_read ON public.course_rewards;
+CREATE POLICY rewards_read ON public.course_rewards FOR SELECT USING (
+  EXISTS (
+    SELECT 1 FROM public.courses c
+    WHERE c.id = course_rewards.course_id AND c.is_active AND c.deleted_at IS NULL
+  ) OR public.fn_is_admin()
+);
 DO $$ BEGIN
   CREATE POLICY rewards_admin ON public.course_rewards FOR ALL TO authenticated
     USING (public.fn_is_admin()) WITH CHECK (public.fn_is_admin());
@@ -388,13 +409,15 @@ VALUES ('course-covers', 'course-covers', true)
 ON CONFLICT (id) DO NOTHING;
 
 -- 教材檔：能看那一章的人才簽得到網址；上傳/刪除只有管理員
-DO $$ BEGIN
-  CREATE POLICY academy_videos_read ON storage.objects FOR SELECT TO authenticated
-    USING (bucket_id = 'course-videos' AND EXISTS (
-      SELECT 1 FROM public.course_videos v
-      WHERE v.storage_path = storage.objects.name AND public.fn_can_access_chapter(v.chapter_key)
-    ));
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DROP POLICY IF EXISTS academy_videos_read ON storage.objects;
+CREATE POLICY academy_videos_read ON storage.objects FOR SELECT TO authenticated
+  USING (bucket_id = 'course-videos' AND EXISTS (
+    SELECT 1 FROM public.course_videos v
+    WHERE v.storage_path = storage.objects.name
+      AND v.is_active
+      AND v.deleted_at IS NULL
+      AND public.fn_can_access_chapter(v.chapter_key)
+  ));
 DO $$ BEGIN
   CREATE POLICY academy_videos_write ON storage.objects FOR INSERT TO authenticated
     WITH CHECK (bucket_id = 'course-videos' AND public.fn_is_admin());

@@ -12,8 +12,10 @@ export function useCatalog() {
   const [assessments, setAssessments] = useState<Assessment[]>([])
   const [rewards, setRewards] = useState<Reward[]>([])
   const [loaded, setLoaded] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const load = useCallback(async () => {
+    setError(null)
     try {
       // .is('deleted_at', null)：軟刪除的（在垃圾桶裡）不進這裡——這是唯一撈這幾張表的地方，
       // 學員／後台編輯畫面共用，垃圾桶另外用 useAdminTrash 撈。
@@ -24,11 +26,18 @@ export function useCatalog() {
         supabase.from('course_assessments').select('*').is('deleted_at', null).order('sort_no').order('id'),
         supabase.from('course_rewards').select('*').order('id'),
       ])
+      const failed = [c, ch, m, a, r].find(result => result.error)?.error
+      if (failed) {
+        setError(`課程資料載入失敗：${failed.message}`)
+        return
+      }
       setCourses((c.data as Course[] | null) ?? [])
       setChapters((ch.data as Chapter[] | null) ?? [])
       setMaterials((m.data as Material[] | null) ?? [])
       setAssessments((a.data as Assessment[] | null) ?? [])
       setRewards((r.data as Reward[] | null) ?? [])
+    } catch {
+      setError('課程資料載入失敗，請檢查網路後再試一次。')
     } finally {
       setLoaded(true)
     }
@@ -91,7 +100,7 @@ export function useCatalog() {
   }, [chapters])
 
   return {
-    courses, chapters, materials, assessments, rewards, loaded, reload: load, chaptersOf, courseStats,
+    courses, chapters, materials, assessments, rewards, loaded, error, reload: load, chaptersOf, courseStats,
     patchCourse, patchChapter, patchMaterial, patchAssessment, patchReward,
     addCourseLocal, addChapterLocal, addMaterialLocal, addAssessmentLocal, addRewardLocal,
     removeCourseLocal, removeChapterLocal, removeMaterialLocal, removeAssessmentLocal, removeRewardLocal,

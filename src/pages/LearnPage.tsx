@@ -11,6 +11,7 @@ import { supabase } from '../lib/supabase'
 import { canAccess } from '../lib/tier'
 import { isDone, playable } from '../lib/progress'
 import { IconCheck, IconLightbulb, IconLock } from '../components/icons'
+import { CatalogError } from '../components/CatalogError'
 import type { Section } from '../lib/types'
 
 // 上課頁——章節橫幅＋小節內文＋影片列＋筆記＋上一章/下一章。
@@ -92,6 +93,7 @@ export function LearnPage() {
 
   const loading = !cat.loaded || authLoading
   if (loading) return <Page><div className="wrap"><div className="skel" style={{ marginTop: 40 }} /></div></Page>
+  if (cat.error) return <Page><div className="wrap"><CatalogError message={cat.error} retry={cat.reload} /></div></Page>
   if (!chapter || !course) return <Navigate to="/courses" replace />
 
   // 沒權限：不白屏、不裝死——說清楚下一步

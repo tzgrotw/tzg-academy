@@ -13,6 +13,7 @@ import { isDone, playable } from '../lib/progress'
 import { IconCheck, IconChevron, IconFileText, IconFilm, IconTrash } from '../components/icons'
 import { ConfirmProvider, useConfirm } from '../components/ConfirmDialog'
 import { commitOrder, DragHandle, SortableList, type DragHandleProps } from '../components/Sortable'
+import { CatalogError } from '../components/CatalogError'
 import type { Assessment, AssessmentKind, AssessmentSubmission, Audience, Chapter, Course, Material, Profile, Progress, QuizQuestion, Reward, Section, Tier } from '../lib/types'
 
 // 後台——四個分頁：會員（搜尋＋一鍵改身分）、課程（課程列表 → 點進去看該課的章節/教材/測驗）、作業批改、垃圾桶。
@@ -293,6 +294,10 @@ function ContentTab() {
 
   const sortedCourses = [...content.courses].sort((a, b) => a.sort_no - b.sort_no || a.id - b.id)
   const selected = sortedCourses.find(c => c.id === selectedId) ?? null
+
+  if (content.loaded && content.error) {
+    return <CatalogError message={content.error} retry={content.reload} />
+  }
 
   async function createCourse() {
     setMsg(await content.createCourse())

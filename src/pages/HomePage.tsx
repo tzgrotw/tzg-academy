@@ -5,6 +5,7 @@ import { IconPhone, IconBookmark, IconCrown } from '../components/icons'
 import { useCatalog } from '../hooks/useCatalog'
 import { useAuth } from '../hooks/useAuth'
 import heroImg from '../assets/hero.jpg'
+import { CatalogError } from '../components/CatalogError'
 
 // 首頁＝招生門面（老闆 2026-08-05 定稿的提案）：超大標題講定位——
 // 女性創業與自我成長；課程只放前四張卡當櫥窗，選課的家在 /courses。
@@ -35,7 +36,8 @@ export function HomePage() {
         <h2 className="serif">課程</h2>
         <p className="lead">從珠寶知識到AI技巧——公開課免費看，進階課入會解鎖。每一門都有章節進度、里程碑獎勵、修畢證書。</p>
         {!cat.loaded && <div className="skel" />}
-        {cat.loaded && featured.length === 0 && (
+        {cat.loaded && cat.error && <CatalogError message={cat.error} retry={cat.reload} />}
+        {cat.loaded && !cat.error && featured.length === 0 && (
           <p className="muted" style={{ marginTop: 24 }}>課程準備中——先註冊卡個位。</p>
         )}
         <div className="grid">
