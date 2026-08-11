@@ -6,9 +6,10 @@ export const DONE_PCT = 95
 export const isDone = (p: Progress | null | undefined) => (p?.pct ?? 0) >= DONE_PCT
 
 /** 只有影片列入進度分母（講義/圖片不記進度：「看到幾成」對它們不成立）——
- *  影片來源可能是自家 storage 或 YouTube，兩種都要算，不然全 YouTube 的章節進度永遠是 0/0。 */
+ *  影片來源可能是自家 storage、YouTube 或 Cloudflare Stream，三種都要算，
+ *  不然單一來源的章節進度永遠是 0/0。 */
 export const playable = (rows: Material[]) =>
-  rows.filter(r => r.kind === 'video' && r.is_active && (r.storage_path || r.youtube_id))
+  rows.filter(r => r.kind === 'video' && r.is_active && (r.storage_path || r.youtube_id || r.cf_stream_id))
 
 export function countProgress(rows: Material[], progOf: (id: number) => Progress | null) {
   const vids = playable(rows)

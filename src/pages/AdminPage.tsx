@@ -77,13 +77,16 @@ function GuideTab() {
       </S>
 
       <S title="影片與講義">
-        <p>影片兩種來源：後台直接上傳檔案（存在我們自己的空間，學員播放走加密簽名網址），或貼 YouTube 網址（影片要設「不公開」，不要「私人」）。
-        大批影片建議用工程師腳本 <code>npm run upload:youtube</code> 從 Google Drive 批次搬上 YouTube。
-        講義上傳 PDF，學員在頁面內建的閱讀器直接看。教材名稱、YouTube 網址都可以事後在教材列上直接改。</p>
+        <p>影片三種來源，照「這支影片要不要收費」選：
+        <b>免費／招生課 → YouTube</b>：影片設「不公開」（不要「私人」），貼網址進後台即可，零成本。
+        <b>收費課 → Cloudflare Stream</b>：影片傳到 Cloudflare 後台，把影片 ID 貼進「＋加 Cloudflare 影片」。播放走簽名憑證，
+        學員把連結傳出去也播不了，還會自動依網速調畫質（手機看最順）。設定步驟見 <code>docs/cloudflare-stream-setup.md</code>。
+        <b>零星檔案 → 後台直接上傳</b>：存自己空間，量大會吃流量費，當備用就好。
+        講義上傳 PDF，學員在頁面內建的閱讀器直接看。教材名稱、YouTube／Cloudflare 影片 ID 都可以事後在教材列上直接改。</p>
       </S>
 
       <S title="進度怎麼算">
-        <p>自家上傳的影片：看到 95% 自動算看完，中途關掉會記住看到哪、下次接著播。
+        <p>自家上傳跟 Cloudflare 的影片：看到 95% 自動算看完，中途關掉會記住看到哪、下次接著播。
         YouTube 影片：技術上抓不到播放進度，學員看完自己按「看完了・標記這支」。講義不算進度。</p>
       </S>
 
@@ -539,6 +542,15 @@ function ChapterCard({ chapter, handle, content, confirm }: {
 
   const [ytUrl, setYtUrl] = useState('')
   const [ytLabel, setYtLabel] = useState('')
+  const [cfUrl, setCfUrl] = useState('')
+  const [cfLabel, setCfLabel] = useState('')
+  async function addCf() {
+    setBusy(true); setErr(null)
+    const e = await content.addCfMaterial(chapter.key, cfUrl, cfLabel, materials.at(-1)?.sort_no ?? 0)
+    setErr(e)
+    if (!e) { setCfUrl(''); setCfLabel('') }
+    setBusy(false)
+  }
   async function addYoutube() {
     setBusy(true); setErr(null)
     const e = await content.addYoutubeMaterial(chapter.key, ytUrl, ytLabel, materials.at(-1)?.sort_no ?? 0)
@@ -648,6 +660,7 @@ function ChapterCard({ chapter, handle, content, confirm }: {
                 onToggle={() => content.toggleMaterial(m)}
                 onRename={label => content.updateMaterial(m.id, { label })}
                 onRenameYoutube={urlOrId => content.updateMaterialYoutubeId(m.id, urlOrId)}
+                onRenameCf={urlOrId => content.updateMaterialCfId(m.id, urlOrId)}
                 onDelete={() => void deleteMaterial(m)} />
             )}
           </SortableList>
@@ -669,6 +682,11 @@ function ChapterCard({ chapter, handle, content, confirm }: {
             <input value={ytUrl} onChange={e => setYtUrl(e.target.value)} placeholder="貼 YouTube 網址或影片 ID" style={{ minWidth: 220 }} />
             <input value={ytLabel} onChange={e => setYtLabel(e.target.value)} placeholder="這支影片的標題" style={{ flex: 1, minWidth: 180 }} />
             <button className="btn-line" disabled={busy || !ytUrl.trim()} onClick={() => void addYoutube()}>＋加 YouTube 影片</button>
+          </div>
+          <div className="inline-form" style={{ marginTop: 10 }}>
+            <input value={cfUrl} onChange={e => setCfUrl(e.target.value)} placeholder="貼 Cloudflare 影片 ID 或網址（收費課用）" style={{ minWidth: 220 }} />
+            <input value={cfLabel} onChange={e => setCfLabel(e.target.value)} placeholder="這支影片的標題" style={{ flex: 1, minWidth: 180 }} />
+            <button className="btn-line" disabled={busy || !cfUrl.trim()} onClick={() => void addCf()}>＋加 Cloudflare 影片</button>
           </div>
           {err && <p className="formerr">{err}</p>}
 
@@ -918,20 +936,23 @@ function SectionEditor({ section, handle, onToggle, onDelete }: {
   )
 }
 
-function MaterialAdminRow({ material, handle, onToggle, onRename, onRenameYoutube, onDelete }: {
+function MaterialAdminRow({ material, handle, onToggle, onRename, onRenameYoutube, onRenameCf, onDelete }: {
   material: Material
   handle: DragHandleProps
   onToggle: () => Promise<string | null>
   onRename: (label: string) => Promise<string | null>
   onRenameYoutube: (urlOrId: string) => Promise<string | null>
+  onRenameCf: (urlOrId: string) => Promise<string | null>
   onDelete: () => void
 }) {
   const [label, setLabel] = useState(material.label)
   const [ytId, setYtId] = useState(material.youtube_id ?? '')
+  const [cfId, setCfId] = useState(material.cf_stream_id ?? '')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const labelDirty = label.trim() !== '' && label.trim() !== material.label
   const ytDirty = ytId.trim() !== '' && ytId.trim() !== material.youtube_id
+  const cfDirty = cfId.trim() !== '' && cfId.trim() !== material.cf_stream_id
 
   async function toggle() {
     setBusy(true)
@@ -948,6 +969,13 @@ function MaterialAdminRow({ material, handle, onToggle, onRename, onRenameYoutub
   async function renameYoutube() {
     setBusy(true); setErr(null)
     const e = await onRenameYoutube(ytId.trim())
+    setErr(e)
+    setBusy(false)
+  }
+
+  async function renameCf() {
+    setBusy(true); setErr(null)
+    const e = await onRenameCf(cfId.trim())
     setErr(e)
     setBusy(false)
   }
@@ -972,6 +1000,14 @@ function MaterialAdminRow({ material, handle, onToggle, onRename, onRenameYoutub
           <input value={ytId} onChange={e => setYtId(e.target.value)} placeholder="貼新的 YouTube 網址或影片 ID"
             style={{ flex: 1, minWidth: 140, border: '1px solid rgba(197,179,130,.4)', borderRadius: 8, padding: '5px 10px', font: 'inherit', fontSize: 12.5, background: '#FFFDF7' }} />
           {ytDirty && <button className="btn btn-s" disabled={busy} onClick={() => void renameYoutube()}>存</button>}
+        </div>
+      )}
+      {material.cf_stream_id && (
+        <div style={{ display: 'flex', gap: 8, width: '100%', alignItems: 'center', marginLeft: 24 }}>
+          <span className="sub" style={{ flex: 'none' }}>Cloudflare 影片</span>
+          <input value={cfId} onChange={e => setCfId(e.target.value)} placeholder="貼新的 Cloudflare 影片 ID 或網址"
+            style={{ flex: 1, minWidth: 140, border: '1px solid rgba(197,179,130,.4)', borderRadius: 8, padding: '5px 10px', font: 'inherit', fontSize: 12.5, background: '#FFFDF7' }} />
+          {cfDirty && <button className="btn btn-s" disabled={busy} onClick={() => void renameCf()}>存</button>}
         </div>
       )}
       {err && <p className="formerr" style={{ width: '100%', margin: 0 }}>{err}</p>}

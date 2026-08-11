@@ -8,6 +8,7 @@ function material(overrides: Partial<Material> & { id: number; chapter_key: stri
     kind: 'video',
     storage_path: 'some/path.mp4',
     youtube_id: null,
+    cf_stream_id: null,
     duration_sec: 300,
     sort_no: overrides.id,
     is_active: true,
@@ -37,15 +38,16 @@ describe('isDone', () => {
 })
 
 describe('playable', () => {
-  it('only counts active videos with a storage path or a YouTube id', () => {
+  it('only counts active videos with a storage path, YouTube id, or Cloudflare Stream id', () => {
     const rows = [
       material({ id: 1, chapter_key: 'c1', kind: 'video', is_active: true, storage_path: 'x.mp4' }),
       material({ id: 2, chapter_key: 'c1', kind: 'doc', is_active: true, storage_path: 'x.pdf' }),
       material({ id: 3, chapter_key: 'c1', kind: 'video', is_active: false, storage_path: 'x.mp4' }),
       material({ id: 4, chapter_key: 'c1', kind: 'video', is_active: true, storage_path: null }),
       material({ id: 5, chapter_key: 'c1', kind: 'video', is_active: true, storage_path: null, youtube_id: 'abc123' }),
+      material({ id: 6, chapter_key: 'c1', kind: 'video', is_active: true, storage_path: null, cf_stream_id: '5d5bc37ffcf54c9b82e996823bffbb81' }),
     ]
-    expect(playable(rows).map(r => r.id)).toEqual([1, 5])
+    expect(playable(rows).map(r => r.id)).toEqual([1, 5, 6])
   })
 })
 

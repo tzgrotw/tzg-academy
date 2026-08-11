@@ -51,6 +51,7 @@ export interface Material {
   kind: MaterialKind
   storage_path: string | null
   youtube_id: string | null
+  cf_stream_id: string | null
   duration_sec: number | null
   sort_no: number
   is_active: boolean

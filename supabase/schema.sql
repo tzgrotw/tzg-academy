@@ -143,6 +143,8 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 -- ── 教材（影片/講義/圖片）────────────────────────────────────────
+--   影片三種來源（擇一）：storage_path＝自家空間、youtube_id＝YouTube（免費課用）、
+--   cf_stream_id＝Cloudflare Stream（收費課用——簽名 token 播放，連結轉傳無效）
 CREATE TABLE IF NOT EXISTS public.course_videos (
   id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   chapter_key TEXT NOT NULL REFERENCES public.course_chapters(key) ON DELETE CASCADE,
@@ -150,6 +152,7 @@ CREATE TABLE IF NOT EXISTS public.course_videos (
   kind TEXT NOT NULL DEFAULT 'video' CHECK (kind IN ('video','doc','image')),
   storage_path TEXT,
   youtube_id TEXT,
+  cf_stream_id TEXT,
   duration_sec INT,
   sort_no INT NOT NULL DEFAULT 100,
   is_active BOOLEAN NOT NULL DEFAULT true,
@@ -158,6 +161,7 @@ CREATE TABLE IF NOT EXISTS public.course_videos (
 );
 -- 舊資料庫已經有這張表的話，補這幾欄（新資料庫上面 CREATE TABLE 就直接帶了，這幾行只是 no-op）
 ALTER TABLE public.course_videos ADD COLUMN IF NOT EXISTS youtube_id TEXT;
+ALTER TABLE public.course_videos ADD COLUMN IF NOT EXISTS cf_stream_id TEXT;
 ALTER TABLE public.course_videos ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
 ALTER TABLE public.course_videos ENABLE ROW LEVEL SECURITY;
 DO $$ BEGIN

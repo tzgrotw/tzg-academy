@@ -2,6 +2,7 @@ import { useCallback } from 'react'
 import { useCatalog } from './useCatalog'
 import { supabase } from '../lib/supabase'
 import { extractYoutubeId } from '../lib/youtube'
+import { extractCfStreamId } from '../lib/cfstream'
 import type { Assessment, AssessmentKind, Chapter, Course, Material, Reward } from '../lib/types'
 
 const newChapterKey = () => `ch${Date.now().toString(36)}`
@@ -105,6 +106,26 @@ export function useAdminContent() {
     return updateMaterial(id, { youtube_id: youtubeId })
   }, [updateMaterial])
 
+  const addCfMaterial = useCallback(async (
+    chapterKey: string, urlOrId: string, label: string, afterSortNo: number,
+  ) => {
+    const cfId = extractCfStreamId(urlOrId)
+    if (!cfId) return '看不出來是哪支 Cloudflare 影片——貼 32 碼影片 ID 或 Stream 後台的影片網址'
+    const { data, error } = await supabase.from('course_videos').insert({
+      chapter_key: chapterKey, label: label.trim() || '未命名影片', kind: 'video',
+      cf_stream_id: cfId, sort_no: afterSortNo + 10,
+    }).select().single()
+    if (error) return error.message
+    cat.addMaterialLocal(data as Material)
+    return null
+  }, [cat])
+
+  const updateMaterialCfId = useCallback(async (id: number, urlOrId: string) => {
+    const cfId = extractCfStreamId(urlOrId)
+    if (!cfId) return '看不出來是哪支 Cloudflare 影片——貼 32 碼影片 ID 或 Stream 後台的影片網址'
+    return updateMaterial(id, { cf_stream_id: cfId })
+  }, [updateMaterial])
+
   const addAssessment = useCallback(async (chapterKey: string, kind: AssessmentKind, afterSortNo: number) => {
     const { data, error } = await supabase.from('course_assessments').insert({
       chapter_key: chapterKey, kind, title: kind === 'quiz' ? '新測驗' : '新作業',
@@ -194,7 +215,8 @@ export function useAdminContent() {
     ...cat,
     createCourse, updateCourse, uploadCourseCover, deleteCourse,
     addChapter, updateChapter, uploadChapterCover, deleteChapter,
-    uploadMaterial, addYoutubeMaterial, updateMaterial, toggleMaterial, updateMaterialYoutubeId, deleteMaterial,
+    uploadMaterial, addYoutubeMaterial, addCfMaterial, updateMaterial, toggleMaterial,
+    updateMaterialYoutubeId, updateMaterialCfId, deleteMaterial,
     addAssessment, updateAssessment, deleteAssessment,
     addReward, updateReward, deleteReward,
   }
