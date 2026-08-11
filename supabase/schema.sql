@@ -400,6 +400,122 @@ DO $$ BEGIN
     USING (public.fn_is_admin()) WITH CHECK (public.fn_is_admin());
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
+-- ── 正式電子證書（完成條件由資料庫驗證，前端不能自行核發）────────────
+CREATE TABLE IF NOT EXISTS public.course_certificates (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  certificate_no TEXT NOT NULL UNIQUE,
+  verification_code UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE RESTRICT,
+  course_id BIGINT NOT NULL REFERENCES public.courses(id) ON DELETE RESTRICT,
+  learner_name TEXT NOT NULL,
+  course_title TEXT NOT NULL,
+  certificate_title TEXT NOT NULL DEFAULT '結業證書',
+  issued_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  revoked_at TIMESTAMPTZ,
+  revoke_reason TEXT,
+  UNIQUE (user_id, course_id)
+);
+ALTER TABLE public.course_certificates ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS certificates_read_own_or_admin ON public.course_certificates;
+CREATE POLICY certificates_read_own_or_admin ON public.course_certificates FOR SELECT TO authenticated
+  USING (user_id = auth.uid() OR public.fn_is_admin());
+DROP POLICY IF EXISTS certificates_admin_update ON public.course_certificates;
+CREATE POLICY certificates_admin_update ON public.course_certificates FOR UPDATE TO authenticated
+  USING (public.fn_is_admin()) WITH CHECK (public.fn_is_admin());
+
+-- 使用伺服器端資料判斷是否修畢：至少有一份有效教材／評量；影片全達 95%；評量全通過。
+CREATE OR REPLACE FUNCTION public.fn_course_completed(p_course BIGINT, p_user UUID DEFAULT auth.uid())
+RETURNS BOOLEAN LANGUAGE sql SECURITY DEFINER SET search_path = public AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.courses c
+    WHERE c.id = p_course AND c.is_active AND c.deleted_at IS NULL
+  )
+  AND (
+    EXISTS (
+      SELECT 1 FROM public.course_videos v
+      JOIN public.course_chapters ch ON ch.key = v.chapter_key
+      WHERE ch.course_id = p_course AND ch.is_active AND ch.deleted_at IS NULL
+        AND v.is_active AND v.deleted_at IS NULL AND v.kind = 'video'
+    )
+    OR EXISTS (
+      SELECT 1 FROM public.course_assessments a
+      JOIN public.course_chapters ch ON ch.key = a.chapter_key
+      WHERE ch.course_id = p_course AND ch.is_active AND ch.deleted_at IS NULL
+        AND a.is_active AND a.deleted_at IS NULL
+    )
+  )
+  AND NOT EXISTS (
+    SELECT 1 FROM public.course_videos v
+    JOIN public.course_chapters ch ON ch.key = v.chapter_key
+    WHERE ch.course_id = p_course AND ch.is_active AND ch.deleted_at IS NULL
+      AND v.is_active AND v.deleted_at IS NULL AND v.kind = 'video'
+      AND NOT EXISTS (
+        SELECT 1 FROM public.video_progress vp
+        WHERE vp.user_id = p_user AND vp.video_id = v.id AND vp.pct >= 95
+      )
+  )
+  AND NOT EXISTS (
+    SELECT 1 FROM public.course_assessments a
+    JOIN public.course_chapters ch ON ch.key = a.chapter_key
+    WHERE ch.course_id = p_course AND ch.is_active AND ch.deleted_at IS NULL
+      AND a.is_active AND a.deleted_at IS NULL
+      AND NOT EXISTS (
+        SELECT 1 FROM public.assessment_submissions s
+        WHERE s.user_id = p_user AND s.assessment_id = a.id AND s.status = 'passed'
+      )
+  )
+$$;
+
+CREATE OR REPLACE FUNCTION public.fn_issue_certificate(p_course BIGINT)
+RETURNS TABLE(certificate_no TEXT, verification_code UUID, course_id BIGINT, learner_name TEXT, course_title TEXT,
+  certificate_title TEXT, issued_at TIMESTAMPTZ, revoked_at TIMESTAMPTZ)
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE
+  v_user UUID := auth.uid();
+  v_name TEXT; v_course_title TEXT; v_certificate_title TEXT;
+BEGIN
+  IF v_user IS NULL THEN RAISE EXCEPTION '請先登入'; END IF;
+  IF NOT public.fn_can_access_course(p_course) THEN RAISE EXCEPTION '沒有這門課的權限'; END IF;
+  IF NOT public.fn_course_completed(p_course, v_user) THEN RAISE EXCEPTION '尚未符合結業條件'; END IF;
+
+  SELECT COALESCE(NULLIF(p.name, ''), NULLIF(p.email, ''), 'TZG 學員') INTO v_name
+  FROM public.profiles p WHERE p.user_id = v_user;
+  SELECT c.title INTO v_course_title FROM public.courses c WHERE c.id = p_course;
+  SELECT COALESCE(r.title, '結業證書') INTO v_certificate_title
+  FROM public.course_rewards r WHERE r.course_id = p_course AND r.after_chapter IS NULL LIMIT 1;
+  v_certificate_title := COALESCE(v_certificate_title, '結業證書');
+
+  INSERT INTO public.course_certificates
+    (certificate_no, user_id, course_id, learner_name, course_title, certificate_title)
+  VALUES
+    ('TZG-' || to_char(now(), 'YYYY') || '-' || upper(substr(replace(gen_random_uuid()::text, '-', ''), 1, 10)),
+     v_user, p_course, v_name, v_course_title, v_certificate_title)
+  ON CONFLICT (user_id, course_id) DO NOTHING;
+
+  RETURN QUERY
+  SELECT cc.certificate_no, cc.verification_code, cc.course_id, cc.learner_name, cc.course_title,
+    cc.certificate_title, cc.issued_at, cc.revoked_at
+  FROM public.course_certificates cc WHERE cc.user_id = v_user AND cc.course_id = p_course;
+END $$;
+
+-- 公開驗證只回傳證書必要欄位，不暴露 email、user_id 或其他會員資料。
+CREATE OR REPLACE FUNCTION public.fn_verify_certificate(p_code TEXT)
+RETURNS TABLE(certificate_no TEXT, learner_name TEXT, course_title TEXT, certificate_title TEXT,
+  issued_at TIMESTAMPTZ, valid BOOLEAN, revoked_at TIMESTAMPTZ)
+LANGUAGE sql SECURITY DEFINER SET search_path = public AS $$
+  SELECT cc.certificate_no, cc.learner_name, cc.course_title, cc.certificate_title,
+    cc.issued_at, cc.revoked_at IS NULL, cc.revoked_at
+  FROM public.course_certificates cc
+  WHERE cc.verification_code::text = p_code OR upper(cc.certificate_no) = upper(p_code)
+  LIMIT 1
+$$;
+
+REVOKE ALL ON FUNCTION public.fn_course_completed(BIGINT, UUID) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.fn_issue_certificate(BIGINT) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.fn_verify_certificate(TEXT) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.fn_issue_certificate(BIGINT) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_verify_certificate(TEXT) TO anon, authenticated;
+
 -- ── 圖庫：教材（私有，簽名網址播放）＋封面（公開）──────────────────
 INSERT INTO storage.buckets (id, name, public, file_size_limit)
 VALUES ('course-videos', 'course-videos', false, 524288000)

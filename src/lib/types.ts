@@ -115,3 +115,18 @@ export interface AssessmentSubmission {
   submitted_at: string
   reviewed_at: string | null
 }
+
+export interface Certificate {
+  certificate_no: string
+  verification_code: string
+  course_id: number
+  learner_name: string
+  course_title: string
+  certificate_title: string
+  issued_at: string
+  revoked_at: string | null
+}
+
+export interface VerifiedCertificate extends Omit<Certificate, 'verification_code' | 'course_id'> {
+  valid: boolean
+}
