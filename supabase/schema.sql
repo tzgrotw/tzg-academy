@@ -562,6 +562,199 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 -- ═══════════════════════════════════════════════════════════════════
+-- Marketplace：講師、線下服務、預約、訂單、分潤
+-- 商業模式：吸收女性講師的課上平台賣，平台抽 10%；
+-- 學員線上看完課 → 站內預約講師的線下服務；講師互發推薦連結導流抽成。
+-- ═══════════════════════════════════════════════════════════════════
+
+-- ── 講師（平台代管內容；user_id 預留給日後講師自助後台）──────────────
+CREATE TABLE IF NOT EXISTS public.instructors (
+  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  slug TEXT NOT NULL UNIQUE,
+  name TEXT NOT NULL,
+  headline TEXT NOT NULL DEFAULT '',
+  bio TEXT NOT NULL DEFAULT '',
+  avatar_url TEXT,
+  cover_url TEXT,
+  line_url TEXT NOT NULL DEFAULT '',
+  ig_url TEXT NOT NULL DEFAULT '',
+  referral_code TEXT NOT NULL UNIQUE,
+  -- 分潤比例存「這位講師」身上（談約可以一人一價）；平台預設 90/10、推薦抽 10 從講師份額出
+  revenue_share_pct INT NOT NULL DEFAULT 90 CHECK (revenue_share_pct BETWEEN 0 AND 100),
+  referral_cut_pct INT NOT NULL DEFAULT 10 CHECK (referral_cut_pct BETWEEN 0 AND 100),
+  user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  sort_no INT NOT NULL DEFAULT 100,
+  deleted_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+ALTER TABLE public.instructors ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS instructors_read ON public.instructors;
+CREATE POLICY instructors_read ON public.instructors FOR SELECT
+  USING ((is_active AND deleted_at IS NULL) OR public.fn_is_admin());
+DO $$ BEGIN
+  CREATE POLICY instructors_admin ON public.instructors FOR ALL TO authenticated
+    USING (public.fn_is_admin()) WITH CHECK (public.fn_is_admin());
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+-- ── 課程掛講師＋定價（price_twd=0 是免費課，走原本 audience 規則）────
+ALTER TABLE public.courses ADD COLUMN IF NOT EXISTS instructor_id BIGINT REFERENCES public.instructors(id) ON DELETE SET NULL;
+ALTER TABLE public.courses ADD COLUMN IF NOT EXISTS price_twd INT NOT NULL DEFAULT 0;
+ALTER TABLE public.courses ADD COLUMN IF NOT EXISTS original_price_twd INT;
+ALTER TABLE public.courses ADD COLUMN IF NOT EXISTS early_price_twd INT;
+ALTER TABLE public.courses ADD COLUMN IF NOT EXISTS early_until TIMESTAMPTZ;
+
+-- ── 會員首次歸因：這個客人是哪位講師帶來的（終身記在檔上）────────────
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS referred_by BIGINT REFERENCES public.instructors(id) ON DELETE SET NULL;
+
+-- ── 講師的線下服務（展示價；線下成交，站內只管預約與歸因）────────────
+CREATE TABLE IF NOT EXISTS public.services (
+  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  instructor_id BIGINT NOT NULL REFERENCES public.instructors(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  duration_min INT NOT NULL DEFAULT 60 CHECK (duration_min > 0),
+  price_twd INT NOT NULL DEFAULT 0 CHECK (price_twd >= 0),
+  location_note TEXT NOT NULL DEFAULT '',
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  sort_no INT NOT NULL DEFAULT 100,
+  deleted_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+ALTER TABLE public.services ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS services_read ON public.services;
+CREATE POLICY services_read ON public.services FOR SELECT
+  USING ((is_active AND deleted_at IS NULL) OR public.fn_is_admin());
+DO $$ BEGIN
+  CREATE POLICY services_admin ON public.services FOR ALL TO authenticated
+    USING (public.fn_is_admin()) WITH CHECK (public.fn_is_admin());
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+-- ── 可預約時段（平台代講師登；capacity 通常 1＝一對一）────────────────
+CREATE TABLE IF NOT EXISTS public.booking_slots (
+  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  service_id BIGINT NOT NULL REFERENCES public.services(id) ON DELETE CASCADE,
+  starts_at TIMESTAMPTZ NOT NULL,
+  ends_at TIMESTAMPTZ NOT NULL,
+  capacity INT NOT NULL DEFAULT 1 CHECK (capacity >= 1),
+  deleted_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CHECK (ends_at > starts_at)
+);
+CREATE INDEX IF NOT EXISTS idx_booking_slots_service ON public.booking_slots (service_id, starts_at);
+ALTER TABLE public.booking_slots ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS slots_read ON public.booking_slots;
+CREATE POLICY slots_read ON public.booking_slots FOR SELECT
+  USING (deleted_at IS NULL OR public.fn_is_admin());
+DO $$ BEGIN
+  CREATE POLICY slots_admin ON public.booking_slots FOR ALL TO authenticated
+    USING (public.fn_is_admin()) WITH CHECK (public.fn_is_admin());
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+-- ── 預約（看完課→約線下服務的橋；source_course_id 記轉換來源）──────────
+--   狀態流：pending（學員送出）→ confirmed（確認）→ completed／cancelled／no_show
+--   容量檢查等前台預約流程上線時用 fn_book_slot RPC 做；後台代訂由管理員自行看時段
+CREATE TABLE IF NOT EXISTS public.bookings (
+  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  slot_id BIGINT NOT NULL REFERENCES public.booking_slots(id) ON DELETE RESTRICT,
+  user_id UUID NOT NULL DEFAULT auth.uid() REFERENCES auth.users(id) ON DELETE CASCADE,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','confirmed','completed','cancelled','no_show')),
+  note TEXT NOT NULL DEFAULT '',
+  source_course_id BIGINT REFERENCES public.courses(id) ON DELETE SET NULL,
+  referrer_instructor_id BIGINT REFERENCES public.instructors(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_bookings_slot ON public.bookings (slot_id);
+CREATE INDEX IF NOT EXISTS idx_bookings_user ON public.bookings (user_id);
+ALTER TABLE public.bookings ENABLE ROW LEVEL SECURITY;
+DO $$ BEGIN
+  CREATE POLICY bookings_own_read ON public.bookings FOR SELECT TO authenticated
+    USING (user_id = auth.uid() OR public.fn_is_admin());
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN
+  CREATE POLICY bookings_own_insert ON public.bookings FOR INSERT TO authenticated
+    WITH CHECK (user_id = auth.uid() AND status = 'pending');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN
+  CREATE POLICY bookings_admin ON public.bookings FOR ALL TO authenticated
+    USING (public.fn_is_admin()) WITH CHECK (public.fn_is_admin());
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+-- ── 訂單（課程購買）───────────────────────────────────────────────
+--   三方拆帳金額「下單當下算好存死」：日後改分潤比例不影響舊帳。
+--   本階段收款靠人工（轉帳對帳後管理員標記已付）；綠界核可後 Edge Function 走 ecpay。
+--   status='paid' 就是課程門票——fn_can_access_course 直接查這張表。
+CREATE TABLE IF NOT EXISTS public.orders (
+  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE RESTRICT,
+  course_id BIGINT NOT NULL REFERENCES public.courses(id) ON DELETE RESTRICT,
+  amount_twd INT NOT NULL CHECK (amount_twd >= 0),
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','paid','refunded','cancelled')),
+  payment_method TEXT NOT NULL DEFAULT 'manual' CHECK (payment_method IN ('manual','ecpay')),
+  ecpay_trade_no TEXT,
+  -- 講師也存快照：課程日後換講師，舊訂單的分潤對象不變
+  instructor_id BIGINT REFERENCES public.instructors(id) ON DELETE SET NULL,
+  referral_code TEXT,
+  referrer_instructor_id BIGINT REFERENCES public.instructors(id) ON DELETE SET NULL,
+  instructor_amount_twd INT NOT NULL DEFAULT 0,
+  referrer_amount_twd INT NOT NULL DEFAULT 0,
+  platform_amount_twd INT NOT NULL DEFAULT 0,
+  note TEXT NOT NULL DEFAULT '',
+  paid_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_orders_user_course ON public.orders (user_id, course_id, status);
+CREATE INDEX IF NOT EXISTS idx_orders_paid_at ON public.orders (paid_at);
+ALTER TABLE public.orders ENABLE ROW LEVEL SECURITY;
+DO $$ BEGIN
+  CREATE POLICY orders_own_read ON public.orders FOR SELECT TO authenticated
+    USING (user_id = auth.uid() OR public.fn_is_admin());
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN
+  CREATE POLICY orders_admin ON public.orders FOR ALL TO authenticated
+    USING (public.fn_is_admin()) WITH CHECK (public.fn_is_admin());
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+-- ── 全站預設分潤比例（單列設定表；講師個別談約蓋過這裡）────────────────
+CREATE TABLE IF NOT EXISTS public.platform_settings (
+  id SMALLINT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+  default_revenue_share_pct INT NOT NULL DEFAULT 90 CHECK (default_revenue_share_pct BETWEEN 0 AND 100),
+  default_referral_cut_pct INT NOT NULL DEFAULT 10 CHECK (default_referral_cut_pct BETWEEN 0 AND 100),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+INSERT INTO public.platform_settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
+ALTER TABLE public.platform_settings ENABLE ROW LEVEL SECURITY;
+DO $$ BEGIN
+  CREATE POLICY settings_admin ON public.platform_settings FOR ALL TO authenticated
+    USING (public.fn_is_admin()) WITH CHECK (public.fn_is_admin());
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+-- ── 守門函式改版：付費課看「有沒有買」────────────────────────────────
+CREATE OR REPLACE FUNCTION public.fn_has_purchased(p_course BIGINT)
+RETURNS BOOLEAN LANGUAGE sql SECURITY DEFINER SET search_path = public AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.orders o
+    WHERE o.user_id = auth.uid() AND o.course_id = p_course AND o.status = 'paid'
+  )
+$$;
+
+-- 蓋掉檔案前段那一版（orders 表要先存在才能定義這版，所以放這裡）。
+-- 規則：付費課（price_twd>0）＝買了才看得到內容；免費課照舊走 audience 分級。
+-- 退款把 status 改掉，權限自動收回，不用另外動作。
+CREATE OR REPLACE FUNCTION public.fn_can_access_course(p_course BIGINT)
+RETURNS BOOLEAN LANGUAGE sql SECURITY DEFINER SET search_path = public AS $$
+  SELECT CASE
+    WHEN public.fn_is_admin() THEN true
+    WHEN NOT c.is_active OR c.deleted_at IS NOT NULL THEN false
+    WHEN c.price_twd > 0 THEN public.fn_has_purchased(p_course)
+    WHEN c.audience = 'public' THEN true
+    WHEN c.audience = 'member' THEN public.fn_my_tier() IN ('member','agent')
+    WHEN c.audience = 'agent'  THEN public.fn_my_tier() = 'agent'
+    ELSE false END
+  FROM public.courses c WHERE c.id = p_course
+$$;
+
+-- ═══════════════════════════════════════════════════════════════════
 -- 跑完之後，老闆把自己升成管理員（email 換成你註冊用的信箱）：
 --   UPDATE public.profiles SET tier = 'admin' WHERE email = 'you@example.com';
 -- ═══════════════════════════════════════════════════════════════════
