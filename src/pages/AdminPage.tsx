@@ -1,51 +1,96 @@
-import { useEffect, useState } from 'react'
-import { Navigate } from 'react-router-dom'
+import { useEffect, useState, type ReactNode } from 'react'
+import { Link, Navigate } from 'react-router-dom'
 import { Page } from '../components/Shell'
 import { useAuth } from '../hooks/useAuth'
 import { useAdminMembers } from '../hooks/useAdminMembers'
 import { useAdminContent } from '../hooks/useAdminContent'
 import { useAdminSubmissions } from '../hooks/useAdminSubmissions'
 import { useAdminTrash } from '../hooks/useAdminTrash'
+import { useAdminInstructors } from '../hooks/useAdminInstructors'
 import { useCatalog } from '../hooks/useCatalog'
 import { supabase } from '../lib/supabase'
 import { AUDIENCE_LABEL, TIER_LABEL, canAccess } from '../lib/tier'
 import { isDone, playable } from '../lib/progress'
-import { IconCheck, IconChevron, IconFileText, IconFilm, IconTrash } from '../components/icons'
+import { IconBookmark, IconCalendar, IconChart, IconCheck, IconChevron, IconClipboard, IconCrown, IconFileText, IconFilm, IconLightbulb, IconReceipt, IconTrash, IconUsers } from '../components/icons'
 import { ConfirmProvider, useConfirm } from '../components/ConfirmDialog'
+import { ToastProvider } from '../components/admin/Toast'
 import { commitOrder, DragHandle, SortableList, type DragHandleProps } from '../components/Sortable'
 import { CatalogError } from '../components/CatalogError'
+import { InstructorsPage } from './admin/InstructorsPage'
+import { ServicesPage } from './admin/ServicesPage'
+import { OrdersPage } from './admin/OrdersPage'
+import { BookingsPage } from './admin/BookingsPage'
+import { CommissionPage } from './admin/CommissionPage'
 import type { Assessment, AssessmentKind, AssessmentSubmission, Audience, Chapter, Course, Material, Profile, Progress, QuizQuestion, Reward, Section, Tier } from '../lib/types'
 
-// 後台——四個分頁：會員（搜尋＋一鍵改身分）、課程（課程列表 → 點進去看該課的章節/教材/測驗）、作業批改、垃圾桶。
-// 課程結構跟課程設定分開兩塊；排序用拖曳（SortableList）；刪除都走 ConfirmDialog 確認，砍下去是軟刪除
-// （進垃圾桶，不是真的沒了）——誤刪從垃圾桶分頁救得回來。
-// 資料存取都在 hooks/useAdminMembers、useAdminContent、useAdminSubmissions、useAdminTrash；這裡只管畫面。
+// 後台 2.0——側欄導覽分四組：內容（課程/垃圾桶/使用說明）、講師（講師管理/服務與時段）、
+// 銷售（訂單/預約/分潤報表）、會員（會員列表/批改中心）。
+// 課程編輯那幾塊沿用原本的元件；Marketplace 新頁面在 pages/admin/ 底下。
+// 資料存取都在 hooks/useAdmin*；這裡只管畫面。刪除一律軟刪除（垃圾桶救得回來）。
+
+type AdminView = 'content' | 'trash' | 'guide' | 'instructors' | 'services' | 'orders' | 'bookings' | 'commission' | 'members' | 'grading'
+
+const NAV: Array<{ cap: string; items: Array<{ key: AdminView; label: string; icon: ReactNode }> }> = [
+  { cap: '內容', items: [
+    { key: 'content', label: '課程', icon: <IconFilm size={15} /> },
+    { key: 'trash', label: '垃圾桶', icon: <IconTrash size={15} /> },
+    { key: 'guide', label: '使用說明', icon: <IconLightbulb size={15} /> },
+  ] },
+  { cap: '講師', items: [
+    { key: 'instructors', label: '講師管理', icon: <IconCrown size={15} /> },
+    { key: 'services', label: '服務與時段', icon: <IconCalendar size={15} /> },
+  ] },
+  { cap: '銷售', items: [
+    { key: 'orders', label: '訂單', icon: <IconReceipt size={15} /> },
+    { key: 'bookings', label: '預約', icon: <IconBookmark size={15} /> },
+    { key: 'commission', label: '分潤報表', icon: <IconChart size={15} /> },
+  ] },
+  { cap: '會員', items: [
+    { key: 'members', label: '會員列表', icon: <IconUsers size={15} /> },
+    { key: 'grading', label: '批改中心', icon: <IconClipboard size={15} /> },
+  ] },
+]
 
 export function AdminPage() {
   const { profile, loading } = useAuth()
-  const [tab, setTab] = useState<'members' | 'content' | 'grading' | 'trash' | 'guide'>('members')
+  const [view, setView] = useState<AdminView>('content')
 
   if (loading) return <Page><div className="wrap"><div className="skel" style={{ marginTop: 40 }} /></div></Page>
   if (profile?.tier !== 'admin') return <Navigate to="/" replace />
 
   return (
     <ConfirmProvider>
-      <Page>
-        <div className="wrap" style={{ paddingBottom: 90 }}>
-          <div className="admin-hd">
-            <h1 className="serif">學院後台</h1>
-            <div className="admin-tabs">
-              <button className={tab === 'members' ? 'on' : ''} onClick={() => setTab('members')}>會員</button>
-              <button className={tab === 'content' ? 'on' : ''} onClick={() => setTab('content')}>課程</button>
-              <button className={tab === 'grading' ? 'on' : ''} onClick={() => setTab('grading')}>作業批改</button>
-              <button className={tab === 'trash' ? 'on' : ''} onClick={() => setTab('trash')}>垃圾桶</button>
-              <button className={tab === 'guide' ? 'on' : ''} onClick={() => setTab('guide')}>使用說明</button>
-            </div>
-          </div>
-          {tab === 'members' ? <MembersTab /> : tab === 'content' ? <ContentTab />
-            : tab === 'grading' ? <GradingTab /> : tab === 'trash' ? <TrashTab /> : <GuideTab />}
+      <ToastProvider>
+        <div className="adm-layout">
+          <aside className="adm-side">
+            <Link to="/" className="brand"><b>泰熙爾札娜</b><span>ADMIN</span></Link>
+            {NAV.map(group => (
+              <nav className="adm-group" key={group.cap} aria-label={group.cap}>
+                <span className="cap">{group.cap}</span>
+                {group.items.map(item => (
+                  <button key={item.key} className={`adm-item${view === item.key ? ' on' : ''}`}
+                    onClick={() => setView(item.key)}>
+                    {item.icon}{item.label}
+                  </button>
+                ))}
+              </nav>
+            ))}
+            <div className="foot-note"><Link to="/">← 回前台網站</Link></div>
+          </aside>
+          <main className="adm-main">
+            {view === 'content' ? <ContentTab />
+              : view === 'trash' ? <TrashTab />
+              : view === 'guide' ? <GuideTab />
+              : view === 'instructors' ? <InstructorsPage />
+              : view === 'services' ? <ServicesPage />
+              : view === 'orders' ? <OrdersPage />
+              : view === 'bookings' ? <BookingsPage />
+              : view === 'commission' ? <CommissionPage />
+              : view === 'members' ? <MembersTab />
+              : <GradingTab />}
+          </main>
         </div>
-      </Page>
+      </ToastProvider>
     </ConfirmProvider>
   )
 }
@@ -189,8 +234,9 @@ function MemberDetail({ member, members, onBack }: {
     setErr(await members.setName(member.user_id, name.trim()))
   }
 
+  // 付費課的購買狀態這裡先不算（要另撈該會員的訂單）——顯示身分能看的課就好
   const courseRows = cat.courses
-    .filter(c => canAccess(c.audience, member.tier))
+    .filter(c => canAccess(c, member.tier))
     .sort((a, b) => a.sort_no - b.sort_no || a.id - b.id)
     .map(course => {
       const chapters = cat.chaptersOf(course.id)
@@ -425,6 +471,8 @@ function CourseDetail({ course, content, confirm, onBack }: {
         {err && <p className="formerr">{err}</p>}
       </div>
 
+      <CoursePricingEditor course={course} content={content} />
+
       <div className="curr-section">
         <div className="curr-section-hd"><h4>章節（{chapters.length}）</h4></div>
         <SortableList items={chapters} getId={c => c.key} onReorder={reorderChapters}>
@@ -451,6 +499,62 @@ function CourseDetail({ course, content, confirm, onBack }: {
           <button className="btn-line" disabled={chapters.length === 0} onClick={() => void addMilestone()}>＋加章節里程碑</button>
         </p>
       </div>
+    </div>
+  )
+}
+
+/** 講師與定價——marketplace 的核心欄位。
+ *  售價 0＝免費課，照舊走「觀看對象」分級；售價 > 0＝付費課，買了才看得到內容
+ *  （這時「觀看對象」不再決定內容開不開，只影響目錄上的標示）。 */
+function CoursePricingEditor({ course, content }: { course: Course; content: AdminContent }) {
+  const { instructors } = useAdminInstructors()
+  const [instructorId, setInstructorId] = useState<number | ''>(course.instructor_id ?? '')
+  const [price, setPrice] = useState(course.price_twd)
+  const [original, setOriginal] = useState<number | ''>(course.original_price_twd ?? '')
+  const [early, setEarly] = useState<number | ''>(course.early_price_twd ?? '')
+  const [until, setUntil] = useState(course.early_until ? course.early_until.slice(0, 10) : '')
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+
+  async function save() {
+    if (early !== '' && !until) { setErr('有早鳥價就要設截止日'); return }
+    setBusy(true); setErr(null)
+    setErr(await content.updateCourse(course.id, {
+      instructor_id: instructorId === '' ? null : instructorId,
+      price_twd: Math.max(0, Math.round(price)),
+      original_price_twd: original === '' ? null : Math.max(0, Math.round(original)),
+      early_price_twd: early === '' ? null : Math.max(0, Math.round(early)),
+      early_until: until && early !== '' ? new Date(`${until}T23:59:59`).toISOString() : null,
+    }))
+    setBusy(false)
+  }
+
+  return (
+    <div className="curr-section">
+      <div className="curr-section-hd"><h4>講師與定價</h4></div>
+      <p className="muted" style={{ fontSize: 13 }}>
+        售價 0＝免費課（照「觀看對象」分級）；設了售價＝付費課，會員要在訂單標記已付後才看得到內容。
+      </p>
+      <div className="inline-form">
+        <select value={instructorId} onChange={e => setInstructorId(e.target.value ? Number(e.target.value) : '')} aria-label="講師">
+          <option value="">（平台自營・不掛講師）</option>
+          {instructors.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
+        </select>
+        <input type="number" min={0} step={100} style={{ width: 110 }} value={price}
+          onChange={e => setPrice(Number(e.target.value))} aria-label="售價" placeholder="售價" />
+        <span className="muted" style={{ alignSelf: 'center', fontSize: 12 }}>元・劃線價</span>
+        <input type="number" min={0} step={100} style={{ width: 110 }} value={original}
+          onChange={e => setOriginal(e.target.value === '' ? '' : Number(e.target.value))} aria-label="劃線價" placeholder="（選填）" />
+        <span className="muted" style={{ alignSelf: 'center', fontSize: 12 }}>・早鳥</span>
+        <input type="number" min={0} step={100} style={{ width: 110 }} value={early}
+          onChange={e => setEarly(e.target.value === '' ? '' : Number(e.target.value))} aria-label="早鳥價" placeholder="（選填）" />
+        <input type="date" value={until} onChange={e => setUntil(e.target.value)} aria-label="早鳥截止" />
+        <button className="btn btn-s" disabled={busy} onClick={() => void save()}>存</button>
+      </div>
+      {price > 0 && instructorId === '' && (
+        <p className="muted" style={{ fontSize: 12.5, marginTop: 8 }}>提醒：這門付費課沒掛講師——收入全歸平台。是講師的課記得選她，分潤才算得出來。</p>
+      )}
+      {err && <p className="formerr">{err}</p>}
     </div>
   )
 }

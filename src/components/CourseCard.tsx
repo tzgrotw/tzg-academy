@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom'
 import { AUDIENCE_LABEL, canAccess } from '../lib/tier'
 import type { Course } from '../lib/types'
 import { useAuth } from '../hooks/useAuth'
+import { usePurchases } from '../hooks/usePurchases'
 import { IconLock } from './icons'
 
 /** 課程卡——目錄與首頁共用。上鎖與否只影響 chip 和動作文字，
@@ -12,8 +13,10 @@ export function CourseCard({ course, chapterCount, videoCount }: {
   videoCount: number
 }) {
   const { profile } = useAuth()
-  const open = canAccess(course.audience, profile?.tier ?? null)
-  const free = course.audience === 'public'
+  const { purchased } = usePurchases()
+  const isPaid = course.price_twd > 0
+  const open = canAccess(course, profile?.tier ?? null, purchased.has(course.id))
+  const free = !isPaid && course.audience === 'public'
   return (
     <Link to={`/course/${course.id}`} className="course">
       <span className="covwrap">
@@ -21,7 +24,11 @@ export function CourseCard({ course, chapterCount, videoCount }: {
           ? <img className="cov" src={course.cover_url} alt="" loading="lazy" />
           : <span className="ph serif">泰</span>}
         <span className={`chip i ${free ? 'free' : 'lock'}`}>
-          {free ? AUDIENCE_LABEL.public : <><IconLock size={11} />{AUDIENCE_LABEL[course.audience]}</>}
+          {free
+            ? AUDIENCE_LABEL.public
+            : isPaid
+              ? (open ? '已購課' : <><IconLock size={11} />NT$ {course.price_twd.toLocaleString()}</>)
+              : <><IconLock size={11} />{AUDIENCE_LABEL[course.audience]}</>}
         </span>
       </span>
       <span className="bd">

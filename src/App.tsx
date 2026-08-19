@@ -1,6 +1,7 @@
 import { lazy, Suspense } from 'react'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { AuthProvider } from './hooks/useAuth'
+import { PurchasesProvider } from './hooks/usePurchases'
 
 const HomePage = lazy(() => import('./pages/HomePage').then(m => ({ default: m.HomePage })))
 const CatalogPage = lazy(() => import('./pages/CatalogPage').then(m => ({ default: m.CatalogPage })))
@@ -14,6 +15,7 @@ const CertificatePage = lazy(() => import('./pages/CertificatePage').then(m => (
 export function App() {
   return (
     <AuthProvider>
+      <PurchasesProvider>
       <BrowserRouter>
         <Suspense fallback={<div className="route-loading" role="status">頁面載入中…</div>}><Routes>
           <Route path="/" element={<HomePage />} />
@@ -28,6 +30,7 @@ export function App() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes></Suspense>
       </BrowserRouter>
+      </PurchasesProvider>
     </AuthProvider>
   )
 }

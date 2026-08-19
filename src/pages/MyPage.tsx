@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link, Navigate, useNavigate } from 'react-router-dom'
 import { Page } from '../components/Shell'
 import { useAuth } from '../hooks/useAuth'
+import { usePurchases } from '../hooks/usePurchases'
 import { useCatalog } from '../hooks/useCatalog'
 import { useProgress } from '../hooks/useProgress'
 import { useSubmissions } from '../hooks/useSubmissions'
@@ -20,6 +21,7 @@ export function MyPage() {
   const { progressOf, loaded: progLoaded } = useProgress(userId)
   const { submissionOf, loaded: subLoaded } = useSubmissions(userId)
   const certificates = useCertificates(userId)
+  const { purchased } = usePurchases()
   const [issuingCourse, setIssuingCourse] = useState<number | null>(null)
   const [certificateError, setCertificateError] = useState<string | null>(null)
 
@@ -29,7 +31,7 @@ export function MyPage() {
   const tier = profile?.tier ?? null
 
   const myCourses = cat.courses
-    .filter(c => c.is_active && canAccess(c.audience, tier))
+    .filter(c => c.is_active && canAccess(c, tier, purchased.has(c.id)))
     .sort((a, b) => a.sort_no - b.sort_no || a.id - b.id)
 
   // 一門課的完整彙整：影片進度、測驗/作業狀態、章節完成、里程碑/證書

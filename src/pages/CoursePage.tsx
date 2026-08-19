@@ -4,6 +4,7 @@ import { useCatalog } from '../hooks/useCatalog'
 import { useProgress } from '../hooks/useProgress'
 import { useSubmissions } from '../hooks/useSubmissions'
 import { useAuth } from '../hooks/useAuth'
+import { usePurchases } from '../hooks/usePurchases'
 import { canAccess, AUDIENCE_LABEL, lockHint } from '../lib/tier'
 import { countProgress, isDone, nextToWatch, playable } from '../lib/progress'
 import { IconAward, IconCheck, IconLock } from '../components/icons'
@@ -20,6 +21,7 @@ export function CoursePage() {
   const cat = useCatalog()
   const { progressOf, loaded: progLoaded } = useProgress(userId)
   const { submissionOf, loaded: subLoaded } = useSubmissions(userId)
+  const { purchased } = usePurchases()
 
   const course = cat.courses.find(c => c.id === courseId) ?? null
   const loading = !cat.loaded || authLoading || (!!userId && (!progLoaded || !subLoaded))
@@ -34,7 +36,7 @@ export function CoursePage() {
   }
 
   const tier = profile?.tier ?? null
-  const open = course ? canAccess(course.audience, tier) : false
+  const open = course ? canAccess(course, tier, purchased.has(course.id)) : false
   const chapters = course ? cat.chaptersOf(course.id) : []
   const chapterKeys = chapters.map(c => c.key)
   const keySet = new Set(chapterKeys)
@@ -106,7 +108,7 @@ export function CoursePage() {
               {!open && (
                 <>
                   {!userId && <Link className="btn btn-m" to="/register">免費註冊開始上課</Link>}
-                  <span style={{ color: '#CFC3A0', fontSize: 13 }}>{course ? lockHint(course.audience, tier) : ''}</span>
+                  <span style={{ color: '#CFC3A0', fontSize: 13 }}>{course ? lockHint(course, tier) : ''}</span>
                 </>
               )}
             </div>
