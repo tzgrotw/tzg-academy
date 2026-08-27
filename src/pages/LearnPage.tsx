@@ -7,6 +7,7 @@ import { useCatalog } from '../hooks/useCatalog'
 import { useProgress } from '../hooks/useProgress'
 import { useSubmissions } from '../hooks/useSubmissions'
 import { useAuth } from '../hooks/useAuth'
+import { usePurchases } from '../hooks/usePurchases'
 import { supabase } from '../lib/supabase'
 import { canAccess } from '../lib/tier'
 import { isDone, playable } from '../lib/progress'
@@ -22,6 +23,7 @@ export function LearnPage() {
   const cat = useCatalog()
   const { progressOf, mark, prog } = useProgress(userId)
   const { submissionOf, submitQuiz, submitAssignment } = useSubmissions(userId)
+  const { purchased } = usePurchases()
 
   const [sections, setSections] = useState<Section[]>([])
   const [secLoaded, setSecLoaded] = useState(false)
@@ -97,11 +99,11 @@ export function LearnPage() {
   if (!chapter || !course) return <Navigate to="/courses" replace />
 
   // 沒權限：不白屏、不裝死——說清楚下一步
-  if (!canAccess(course.audience, profile?.tier ?? null)) {
+  if (!canAccess(course, profile?.tier ?? null, purchased.has(course.id))) {
     return (
       <Page><div className="wrap"><div className="locknote">
-        <h3 className="i"><IconLock size={17} />這一章是{course.audience === 'agent' ? '代理專屬' : '會員'}內容</h3>
-        <p>{userId ? '聯繫學院開通身分，整套課程一次打開。' : '免費註冊就能開始上公開課；進階課入會解鎖。'}</p>
+        <h3 className="i"><IconLock size={17} />這一章是{course.price_twd > 0 ? '購課學員' : course.audience === 'agent' ? '代理專屬' : '會員'}內容</h3>
+        <p>{course.price_twd > 0 ? '完成購課後這裡立刻解鎖。' : userId ? '聯繫學院開通身分，整套課程一次打開。' : '免費註冊就能開始上公開課；進階課入會解鎖。'}</p>
         <p style={{ marginTop: 16 }}>
           {!userId && <Link className="btn btn-m" to="/register">免費註冊</Link>}
           {userId && <Link className="btn btn-m" to={`/course/${course.id}`}>回課程介紹</Link>}

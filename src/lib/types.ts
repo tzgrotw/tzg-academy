@@ -7,6 +7,7 @@ export interface Profile {
   email: string
   name: string
   tier: Tier
+  referred_by: number | null
   created_at: string
 }
 
@@ -19,6 +20,11 @@ export interface Course {
   sort_no: number
   is_active: boolean
   deleted_at: string | null
+  instructor_id: number | null
+  price_twd: number
+  original_price_twd: number | null
+  early_price_twd: number | null
+  early_until: string | null
 }
 
 export interface Chapter {
@@ -129,4 +135,82 @@ export interface Certificate {
 
 export interface VerifiedCertificate extends Omit<Certificate, 'verification_code' | 'course_id'> {
   valid: boolean
+}
+
+// ── Marketplace：講師、服務、預約、訂單 ──────────────────────────────
+
+export interface Instructor {
+  id: number
+  slug: string
+  name: string
+  headline: string
+  bio: string
+  avatar_url: string | null
+  cover_url: string | null
+  line_url: string
+  ig_url: string
+  referral_code: string
+  revenue_share_pct: number
+  referral_cut_pct: number
+  user_id: string | null
+  is_active: boolean
+  sort_no: number
+  deleted_at: string | null
+}
+
+export interface Service {
+  id: number
+  instructor_id: number
+  title: string
+  description: string
+  duration_min: number
+  price_twd: number
+  location_note: string
+  is_active: boolean
+  sort_no: number
+  deleted_at: string | null
+}
+
+export interface BookingSlot {
+  id: number
+  service_id: number
+  starts_at: string
+  ends_at: string
+  capacity: number
+  deleted_at: string | null
+}
+
+export type BookingStatus = 'pending' | 'confirmed' | 'completed' | 'cancelled' | 'no_show'
+
+export interface Booking {
+  id: number
+  slot_id: number
+  user_id: string
+  status: BookingStatus
+  note: string
+  source_course_id: number | null
+  referrer_instructor_id: number | null
+  created_at: string
+}
+
+export type OrderStatus = 'pending' | 'paid' | 'refunded' | 'cancelled'
+export type PaymentMethod = 'manual' | 'ecpay'
+
+export interface Order {
+  id: number
+  user_id: string
+  course_id: number
+  amount_twd: number
+  status: OrderStatus
+  payment_method: PaymentMethod
+  ecpay_trade_no: string | null
+  instructor_id: number | null
+  referral_code: string | null
+  referrer_instructor_id: number | null
+  instructor_amount_twd: number
+  referrer_amount_twd: number
+  platform_amount_twd: number
+  note: string
+  paid_at: string | null
+  created_at: string
 }

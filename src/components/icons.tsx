@@ -130,3 +130,64 @@ export function IconFileText({ size = 14, className }: IconProps) {
     </svg>
   )
 }
+
+export function IconX({ size = 16, className }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" className={className} {...base}>
+      <line x1="6" y1="6" x2="18" y2="18" />
+      <line x1="18" y1="6" x2="6" y2="18" />
+    </svg>
+  )
+}
+
+export function IconUsers({ size = 16, className }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" className={className} {...base}>
+      <circle cx="9" cy="8" r="3.4" />
+      <path d="M3.5 20c.6-3.4 2.8-5.2 5.5-5.2s4.9 1.8 5.5 5.2" />
+      <path d="M15.2 5.2a3.4 3.4 0 0 1 0 5.7" />
+      <path d="M17.5 15.1c1.7.7 2.7 2.3 3 4.9" />
+    </svg>
+  )
+}
+
+export function IconCalendar({ size = 16, className }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" className={className} {...base}>
+      <rect x="4" y="5.5" width="16" height="15" rx="2" />
+      <line x1="4" y1="10" x2="20" y2="10" />
+      <line x1="8.5" y1="3.5" x2="8.5" y2="7" />
+      <line x1="15.5" y1="3.5" x2="15.5" y2="7" />
+    </svg>
+  )
+}
+
+export function IconReceipt({ size = 16, className }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" className={className} {...base}>
+      <path d="M6 3h12v18l-2.4-1.6L13.2 21l-2.4-1.6L8.4 21 6 19.4V3z" />
+      <line x1="9" y1="8" x2="15" y2="8" />
+      <line x1="9" y1="12" x2="15" y2="12" />
+    </svg>
+  )
+}
+
+export function IconChart({ size = 16, className }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" className={className} {...base}>
+      <line x1="4" y1="20" x2="20" y2="20" />
+      <line x1="7.5" y1="20" x2="7.5" y2="12" />
+      <line x1="12" y1="20" x2="12" y2="6" />
+      <line x1="16.5" y1="20" x2="16.5" y2="9.5" />
+    </svg>
+  )
+}
+
+export function IconLinkChain({ size = 16, className }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" className={className} {...base}>
+      <path d="M10 14a4.2 4.2 0 0 0 6 0l3-3a4.24 4.24 0 0 0-6-6l-1.5 1.5" />
+      <path d="M14 10a4.2 4.2 0 0 0-6 0l-3 3a4.24 4.24 0 0 0 6 6l1.5-1.5" />
+    </svg>
+  )
+}
